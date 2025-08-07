@@ -1,0 +1,10 @@
+spring:
+  application:
+    name: registration-service
+
+  config:
+    import: "configserver:http://localhost:8888"  # New way in Spring Boot 3.2+
+
+  cloud:
+    config:
+      fail-fast: true
