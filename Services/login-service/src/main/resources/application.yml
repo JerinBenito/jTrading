@@ -1,0 +1,15 @@
+spring:
+  application:
+    name: login-service
+
+  config:
+    import: "configserver:"   # 👈 REQUIRED in Spring Boot 3.x
+
+  cloud:
+    config:
+      uri: http://localhost:8888   # config-server url
+      fail-fast: true
+
+logging:
+  level:
+    org.springframework.security: DEBUG
