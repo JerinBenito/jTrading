@@ -38,19 +38,31 @@ public class AuthController {
 
     @PostMapping("/login")
     public Map<String, String> login(@RequestBody LoginRequest loginRequest) {
-        authenticationManager.authenticate(
-            new UsernamePasswordAuthenticationToken(
-                loginRequest.getUsername(), 
-                loginRequest.getPassword()
-            )
-        );
+        try {
+            // Authenticate user
+            authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(
+                    loginRequest.getUsername(),
+                    loginRequest.getPassword()
+                )
+            );
 
-        final UserDetails userDetails = userDetailsService.loadUserByUsername(loginRequest.getUsername());
-        final String token = jwtTokenUtil.generateToken(userDetails.getUsername());
+            // Load user details
+            final UserDetails userDetails = userDetailsService.loadUserByUsername(loginRequest.getUsername());
 
-        Map<String, String> response = new HashMap<>();
-        response.put("token", token);
-        return response;
+            // Generate JWT token
+            final String token = jwtTokenUtil.generateToken(userDetails.getUsername());
+
+            // Return response
+            Map<String, String> response = new HashMap<>();
+            response.put("token", token);
+            return response;
+
+        } catch (BadCredentialsException e) {
+            throw new RuntimeException("Invalid username or password", e);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to generate JWT token", e);
+        }
     }
 
     @GetMapping("/dashboard")

@@ -1,46 +1,68 @@
 package com.jtrade.login_service.security;
 
-
-import io.jsonwebtoken.*;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
+import java.security.PrivateKey;
+import java.security.PublicKey;
 import java.util.Date;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+
+import com.jtrade.login_service.config.JwtConfig;
+
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.JwtException;
 
 @Component
 public class JwtTokenUtil {
 
-    @Value("${jwt.secret}")
-    private String jwtSecret;
+    @Autowired
+    private JwtConfig jwtConfig;
 
-    @Value("${jwt.expiration}")
-    private Long jwtExpiration;
+    private static final long JWT_EXPIRATION = 24 * 60 * 60 * 1000; // 1 day
 
-    // Generate token
     public String generateToken(String username) {
-        return Jwts.builder()
-                .setSubject(username)
-                .setIssuedAt(new Date())
-                .setExpiration(new Date(System.currentTimeMillis() + jwtExpiration))
-                .signWith(SignatureAlgorithm.HS512, jwtSecret)
-                .compact();
+        try {
+            PrivateKey privateKey = jwtConfig.getPrivateKey();
+            return Jwts.builder()
+                    .setSubject(username)
+                    .setIssuedAt(new Date())
+                    .setExpiration(new Date(System.currentTimeMillis() + JWT_EXPIRATION))
+                    .signWith(privateKey, SignatureAlgorithm.RS256)
+                    .compact();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to generate JWT token", e);
+        }
     }
 
-    // Get username from token
-    public String getUsernameFromToken(String token) {
-        return Jwts.parser()
-                .setSigningKey(jwtSecret)
-                .parseClaimsJws(token)
-                .getBody()
-                .getSubject();
-    }
-
-    // Validate token
     public boolean validateToken(String token) {
         try {
-            Jwts.parser().setSigningKey(jwtSecret).parseClaimsJws(token);
+            PublicKey publicKey = jwtConfig.getPublicKey();
+            Jwts.parserBuilder()
+                .setSigningKey(publicKey)
+                .build()
+                .parseClaimsJws(token);
             return true;
         } catch (JwtException | IllegalArgumentException e) {
+            // invalid token
             return false;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to validate JWT token", e);
+        }
+    }
+
+    public String getUsernameFromToken(String token) {
+        try {
+            PublicKey publicKey = jwtConfig.getPublicKey();
+            Claims claims = Jwts.parserBuilder()
+                    .setSigningKey(publicKey)
+                    .build()
+                    .parseClaimsJws(token)
+                    .getBody();
+            return claims.getSubject();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to extract username from JWT", e);
         }
     }
 }
