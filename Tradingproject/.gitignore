@@ -1,0 +1,6 @@
+# Claude Code local settings — settings.local.json has held real credentials in its
+# permission-allowlist history (Upstox API secret from early local dev testing); never commit it.
+.claude/
+
+# Stray local run logs
+*.log

@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: signal-backend
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5434}/${DB_NAME:trading_signals}
+    username: ${DB_USER:trading_signals}
+    password: ${DB_PASSWORD:trading_signals}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  quartz:
+    job-store-type: memory
+
+upstox:
+  base-url: https://api.upstox.com
+  api-key: ${UPSTOX_API_KEY:}
+  api-secret: ${UPSTOX_API_SECRET:}
+  redirect-uri: ${UPSTOX_REDIRECT_URI:http://localhost:8080/auth/upstox/callback}
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

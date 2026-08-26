@@ -1,0 +1,99 @@
+import { useCallback, useState } from 'react';
+import { RefreshControl, ScrollView, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { colors } from '../../src/constants/colors';
+import { useInstrument } from '../../src/context/InstrumentContext';
+import { useApiData } from '../../src/hooks/useApiData';
+import { api } from '../../src/api/client';
+import { ScreenHeader } from '../../src/components/ScreenHeader';
+import { InstrumentToggle } from '../../src/components/InstrumentToggle';
+import { HealthBadge } from '../../src/components/HealthBadge';
+import { PredictionCard } from '../../src/components/PredictionCard';
+import { TrajectoryChart } from '../../src/components/TrajectoryChart';
+import { RangeCalibrationRow } from '../../src/components/RangeCalibrationRow';
+import { EmptyState, ErrorState, LoadingState } from '../../src/components/ScreenState';
+
+export default function DashboardScreen() {
+  const { instrument } = useInstrument();
+  const insets = useSafeAreaInsets();
+
+  const daily = useApiData(() => api.getForecastHistory(instrument, '1d'), [instrument]);
+  const hourly = useApiData(() => api.getForecastHistory(instrument, '1h'), [instrument]);
+  const trajectory = useApiData(() => api.getTrajectory(instrument), [instrument]);
+  const rangeHourly = useApiData(() => api.getRangeCalibration(instrument, '1h'), [instrument]);
+  const rangeDaily = useApiData(() => api.getRangeCalibration(instrument, '1d'), [instrument]);
+
+  const [manualRefreshing, setManualRefreshing] = useState(false);
+  const onRefresh = useCallback(() => {
+    setManualRefreshing(true);
+    daily.refresh();
+    hourly.refresh();
+    trajectory.refresh();
+    rangeHourly.refresh();
+    rangeDaily.refresh();
+    setTimeout(() => setManualRefreshing(false), 600);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [instrument]);
+
+  const latestDaily = daily.data?.[0] ?? null;
+  const latestHourly = hourly.data?.[0] ?? null;
+  const loading = daily.loading && hourly.loading;
+  const firstError = daily.error ?? hourly.error;
+
+  return (
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={[styles.content, { paddingTop: insets.top + 12 }]}
+      refreshControl={
+        <RefreshControl refreshing={manualRefreshing} onRefresh={onRefresh} tintColor={colors.accent} />
+      }
+    >
+      <ScreenHeader eyebrow={instrument} title="Dashboard" right={<HealthBadge />} />
+
+      <InstrumentToggle />
+
+      {loading && <LoadingState />}
+      {!loading && firstError && <ErrorState message={firstError} onRetry={onRefresh} />}
+
+      {!loading && !firstError && (
+        <>
+          {latestDaily ? (
+            <PredictionCard
+              title="Today's close prediction"
+              icon="sunny-outline"
+              prediction={latestDaily}
+            />
+          ) : (
+            <EmptyState message="No same-day prediction recorded yet today." />
+          )}
+
+          {trajectory.data && <TrajectoryChart trajectory={trajectory.data} />}
+
+          {latestHourly ? (
+            <PredictionCard
+              title="Latest hourly forecast"
+              icon="time-outline"
+              prediction={latestHourly}
+            />
+          ) : (
+            <EmptyState message="No hourly forecast recorded yet." />
+          )}
+
+          <RangeCalibrationRow hourly={rangeHourly.data} daily={rangeDaily.data} />
+        </>
+      )}
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  content: {
+    padding: 16,
+    paddingBottom: 32,
+    gap: 14,
+  },
+});
