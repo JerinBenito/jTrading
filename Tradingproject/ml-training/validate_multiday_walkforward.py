@@ -17,12 +17,15 @@ DATA_PATH = os.path.join(os.path.dirname(__file__), "data", "ml_features_all.jso
 NUM_FOLDS = 5  # first block is used only as initial training data, so this gives 4 test folds
 HORIZONS = [5, 10, 20, 40]
 
-FEATURES = [
+# volumeRatio20d is null for NIFTY/BANKNIFTY (no real index volume) - kept as a feature anyway
+# (not required in dropna) since LightGBM handles missing values natively.
+REQUIRED_FEATURES = [
     "dailyReturnPct", "gapFromPrevClosePct", "intradayRangePct",
     "emaSpreadPct", "rsi14", "atr14",
     "return5dPct", "return10dPct", "return20dPct", "return40dPct",
     "bodyPct", "upperWickPct", "lowerWickPct",
 ]
+FEATURES = REQUIRED_FEATURES + ["volumeRatio20d"]
 
 
 def run():
@@ -43,7 +46,7 @@ def run():
 
     for horizon in HORIZONS:
         target = f"forwardReturn{horizon}dPct"
-        sub = df.dropna(subset=FEATURES + [target]).copy()
+        sub = df.dropna(subset=REQUIRED_FEATURES + [target]).copy()
 
         print(f"\n{'=' * 70}\nHORIZON: {horizon} days\n{'=' * 70}")
         fold_results = []

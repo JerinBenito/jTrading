@@ -13,12 +13,16 @@ df["tradingDate"] = pd.to_datetime(df["tradingDate"])
 print(f"Total rows: {len(df)}, instruments: {df['instrument'].nunique()}")
 print(f"Date range: {df['tradingDate'].min().date()} to {df['tradingDate'].max().date()}")
 
-FEATURES = [
+# volumeRatio20d is null for NIFTY/BANKNIFTY (no real index volume) - kept as a feature anyway
+# (not required in dropna) since LightGBM handles missing values natively; dropping it would
+# throw away those 2 instruments' rows entirely for a feature that's genuinely inapplicable to them.
+REQUIRED_FEATURES = [
     "dailyReturnPct", "gapFromPrevClosePct", "intradayRangePct",
     "emaSpreadPct", "rsi14", "atr14",
     "return5dPct", "return10dPct", "return20dPct", "return40dPct",
     "bodyPct", "upperWickPct", "lowerWickPct",
 ]
+FEATURES = REQUIRED_FEATURES + ["volumeRatio20d"]
 
 dates = sorted(df["tradingDate"].unique())
 cutoff = dates[int(len(dates) * 0.8)]
@@ -26,7 +30,7 @@ print(f"Split cutoff: {pd.Timestamp(cutoff).date()}")
 
 for horizon in [5, 10, 20, 40]:
     target = f"forwardReturn{horizon}dPct"
-    sub = df.dropna(subset=FEATURES + [target]).copy()
+    sub = df.dropna(subset=REQUIRED_FEATURES + [target]).copy()
 
     train = sub[sub["tradingDate"] < cutoff]
     test = sub[sub["tradingDate"] >= cutoff]

@@ -16,7 +16,7 @@ print(f"Date range: {df['tradingDate'].min()} to {df['tradingDate'].max()}")
 
 FEATURES = [
     "hoursSinceOpen", "returnSoFarPct", "volatilitySoFarPct", "rsi14", "emaSpreadPct",
-    "bodyPct", "upperWickPct", "lowerWickPct", "last3UpCount",
+    "bodyPct", "upperWickPct", "lowerWickPct", "last3UpCount", "volumeSoFarRatio",
 ]
 TARGET = "remainingDriftPct"
 
