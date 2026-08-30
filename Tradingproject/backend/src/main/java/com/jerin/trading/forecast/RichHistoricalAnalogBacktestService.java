@@ -4,7 +4,6 @@ import com.jerin.trading.domain.OhlcvCandle;
 import com.jerin.trading.indicator.AtrCalculator;
 import com.jerin.trading.indicator.EmaCalculator;
 import com.jerin.trading.indicator.RsiCalculator;
-import com.jerin.trading.ingestion.Instrument;
 import com.jerin.trading.repository.OhlcvCandleRepository;
 import org.springframework.stereotype.Service;
 
@@ -42,8 +41,8 @@ public class RichHistoricalAnalogBacktestService {
         this.candleRepository = candleRepository;
     }
 
-    public List<RichHistoricalAnalogHourResult> compare(Instrument instrument) {
-        List<OhlcvCandle> hourly = candleRepository.findByInstrumentAndIntervalOrderByTsAsc(instrument.name(), SOURCE_INTERVAL);
+    public List<RichHistoricalAnalogHourResult> compare(String instrumentTag) {
+        List<OhlcvCandle> hourly = candleRepository.findByInstrumentAndIntervalOrderByTsAsc(instrumentTag, SOURCE_INTERVAL);
         List<BigDecimal> closes = hourly.stream().map(OhlcvCandle::getClose).toList();
         List<BigDecimal> rsi14 = RsiCalculator.calculate(closes, RSI_PERIOD);
         List<BigDecimal> ema9 = EmaCalculator.calculate(closes, EMA_SHORT_PERIOD);

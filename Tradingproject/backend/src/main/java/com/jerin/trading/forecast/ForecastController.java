@@ -107,13 +107,13 @@ public class ForecastController {
 
     /** Plain volatility-scaled re-anchor vs. k-NN historical-analog estimate (Phase B — see project long-term roadmap), by hour. */
     @GetMapping("/{instrument}/historical-analog-backtest")
-    public List<HistoricalAnalogHourResult> historicalAnalogBacktest(@PathVariable Instrument instrument) {
+    public List<HistoricalAnalogHourResult> historicalAnalogBacktest(@PathVariable String instrument) {
         return historicalAnalogBacktestService.compare(instrument);
     }
 
     /** Same as above, plus a richer analog matched on return-so-far + volatility-so-far + RSI + EMA spread, not return alone. */
     @GetMapping("/{instrument}/rich-historical-analog-backtest")
-    public List<RichHistoricalAnalogHourResult> richHistoricalAnalogBacktest(@PathVariable Instrument instrument) {
+    public List<RichHistoricalAnalogHourResult> richHistoricalAnalogBacktest(@PathVariable String instrument) {
         return richHistoricalAnalogBacktestService.compare(instrument);
     }
 
