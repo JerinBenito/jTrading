@@ -73,6 +73,11 @@ public class MlFeatureSnapshot {
     @Column(name = "lower_wick_pct", precision = 8, scale = 4)
     private BigDecimal lowerWickPct;
 
+    /** Today's volume / trailing 20-day average daily volume. Null for NIFTY/BANKNIFTY (no real
+     * index volume) or before 20 prior days exist. */
+    @Column(name = "volume_ratio_20d", precision = 10, scale = 4)
+    private BigDecimal volumeRatio20d;
+
     @Column(name = "return_5d_pct", precision = 8, scale = 4)
     private BigDecimal return5dPct;
     @Column(name = "return_10d_pct", precision = 8, scale = 4)

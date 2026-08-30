@@ -19,6 +19,11 @@ public record IntradayFeatureRow(
         double upperWickPct,
         double lowerWickPct,
         int last3UpCount,
+        /** Today's volume-so-far (through this hour) divided by the trailing 20-day average total
+         * daily volume — "is today unusually busy so far, or unusually quiet." Null when the
+         * instrument carries no real volume (the NIFTY/BANKNIFTY index itself) or there isn't yet
+         * 20 prior days of history. */
+        Double volumeSoFarRatio,
         double currentPrice,
         double actualFinalClose,
         double remainingDriftPct

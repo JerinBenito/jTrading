@@ -30,6 +30,7 @@ public class IntradayFeatureExportService {
     private static final int RSI_PERIOD = 14;
     private static final int EMA_SHORT_PERIOD = 9;
     private static final int EMA_LONG_PERIOD = 21;
+    private static final int VOLUME_LOOKBACK_DAYS = 20;
     private static final String SOURCE_INTERVAL = "1h";
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
@@ -67,7 +68,10 @@ public class IntradayFeatureExportService {
             double actualFinalClose = today.get(today.size() - 1).getClose().doubleValue();
             double runningHigh = Double.NEGATIVE_INFINITY;
             double runningLow = Double.POSITIVE_INFINITY;
+            long volumeSoFar = 0;
+            boolean volumeKnown = true;
             String tradingDate = today.get(0).getTs().atZoneSameInstant(IST).toLocalDate().toString();
+            Double trailingAvgDailyVolume = trailingAvgVolume(dailyBars, i);
 
             for (int h = 0; h < today.size(); h++) {
                 OhlcvCandle candle = today.get(h);
@@ -75,6 +79,14 @@ public class IntradayFeatureExportService {
                 double currentPrice = candle.getClose().doubleValue();
                 runningHigh = Math.max(runningHigh, candle.getHigh().doubleValue());
                 runningLow = Math.min(runningLow, candle.getLow().doubleValue());
+                if (candle.getVolume() != null) {
+                    volumeSoFar += candle.getVolume();
+                } else {
+                    volumeKnown = false;
+                }
+                Double volumeSoFarRatio = (volumeKnown && trailingAvgDailyVolume != null && trailingAvgDailyVolume > 0)
+                        ? volumeSoFar / trailingAvgDailyVolume
+                        : null;
 
                 BigDecimal rsiVal = rsi14.get(idx);
                 BigDecimal ema9Val = ema9.get(idx);
@@ -108,12 +120,30 @@ public class IntradayFeatureExportService {
                 rows.add(new IntradayFeatureRow(
                         instrumentTag, tradingDate, h,
                         returnSoFarPct, volatilitySoFarPct, rsiVal.doubleValue(), emaSpreadPct,
-                        bodyPct, upperWickPct, lowerWickPct, upCount,
+                        bodyPct, upperWickPct, lowerWickPct, upCount, volumeSoFarRatio,
                         currentPrice, actualFinalClose, remainingDriftPct));
             }
             globalIndex += today.size();
         }
         return rows;
+    }
+
+    /** Average total daily volume over the {@value #VOLUME_LOOKBACK_DAYS} trading days strictly
+     * before day index {@code i} — null if fewer than that many prior days exist, or any of them
+     * has unknown volume (e.g. the NIFTY/BANKNIFTY index, which carries no real volume). */
+    private Double trailingAvgVolume(List<OhlcvCandle> dailyBars, int i) {
+        if (i < VOLUME_LOOKBACK_DAYS) {
+            return null;
+        }
+        long sum = 0;
+        for (int j = i - VOLUME_LOOKBACK_DAYS; j < i; j++) {
+            Long volume = dailyBars.get(j).getVolume();
+            if (volume == null) {
+                return null;
+            }
+            sum += volume;
+        }
+        return sum / (double) VOLUME_LOOKBACK_DAYS;
     }
 
     public List<IntradayFeatureRow> exportAll() {

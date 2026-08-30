@@ -38,6 +38,7 @@ public class MlFeatureSnapshotService {
     private static final String SOURCE_INTERVAL = "1h";
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final int[] LOOKBACK_HORIZONS = {5, 10, 20, 40};
+    private static final int VOLUME_LOOKBACK_DAYS = 20;
     private static final int EMA_SHORT = 9;
     private static final int EMA_LONG = 21;
     private static final int RSI_PERIOD = 14;
@@ -116,6 +117,13 @@ public class MlFeatureSnapshotService {
                     .multiply(BigDecimal.valueOf(100)).setScale(4, RoundingMode.HALF_UP));
         }
 
+        Long trailingAvgVolume = trailingAvgVolume(daily, i);
+        if (trailingAvgVolume != null && trailingAvgVolume > 0 && today.getVolume() != null) {
+            builder.volumeRatio20d(BigDecimal.valueOf(today.getVolume())
+                    .divide(BigDecimal.valueOf(trailingAvgVolume), 6, RoundingMode.HALF_UP)
+                    .setScale(4, RoundingMode.HALF_UP));
+        }
+
         for (int horizon : LOOKBACK_HORIZONS) {
             BigDecimal lookbackReturn = i - horizon >= 0 ? pctChange(closes.get(i - horizon), close) : null;
             BigDecimal forwardReturn = i + horizon < closes.size() ? pctChange(close, closes.get(i + horizon)) : null;
@@ -132,6 +140,24 @@ public class MlFeatureSnapshotService {
         Optional<MlFeatureSnapshot> existing = snapshotRepository.findByInstrumentAndTradingDate(instrumentTag, snapshot.getTradingDate());
         existing.ifPresent(e -> snapshot.setId(e.getId()));
         return snapshot;
+    }
+
+    /** Average total daily volume over the {@value #VOLUME_LOOKBACK_DAYS} trading days strictly
+     * before day index {@code i} — null if fewer than that many prior days exist, or any of them
+     * has unknown volume (e.g. the NIFTY/BANKNIFTY index, which carries no real volume). */
+    private Long trailingAvgVolume(List<OhlcvCandle> daily, int i) {
+        if (i < VOLUME_LOOKBACK_DAYS) {
+            return null;
+        }
+        long sum = 0;
+        for (int j = i - VOLUME_LOOKBACK_DAYS; j < i; j++) {
+            Long volume = daily.get(j).getVolume();
+            if (volume == null) {
+                return null;
+            }
+            sum += volume;
+        }
+        return sum / VOLUME_LOOKBACK_DAYS;
     }
 
     private BigDecimal pctChange(BigDecimal from, BigDecimal to) {
