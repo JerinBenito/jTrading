@@ -62,6 +62,17 @@ public class MlFeatureSnapshot {
     @Column(name = "atr14", precision = 14, scale = 4)
     private BigDecimal atr14;
 
+    /** Daily candle shape — signed body dominance and wick proportions. Tested as a manual k-NN
+     * feature ({@link com.jerin.trading.forecast.ChartShapeAnalogBacktestService}) and found no
+     * edge there, but kept here as raw material for a future ML model that can find nonlinear
+     * interactions a nearest-neighbor average cannot. */
+    @Column(name = "body_pct", precision = 8, scale = 4)
+    private BigDecimal bodyPct;
+    @Column(name = "upper_wick_pct", precision = 8, scale = 4)
+    private BigDecimal upperWickPct;
+    @Column(name = "lower_wick_pct", precision = 8, scale = 4)
+    private BigDecimal lowerWickPct;
+
     @Column(name = "return_5d_pct", precision = 8, scale = 4)
     private BigDecimal return5dPct;
     @Column(name = "return_10d_pct", precision = 8, scale = 4)

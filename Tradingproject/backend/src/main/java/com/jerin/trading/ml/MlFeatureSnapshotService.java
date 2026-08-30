@@ -103,6 +103,19 @@ public class MlFeatureSnapshotService {
                 .atr14(atrSeries.get(i))
                 .computedAt(OffsetDateTime.now());
 
+        BigDecimal range = today.getHigh().subtract(today.getLow());
+        if (range.compareTo(BigDecimal.ZERO) > 0) {
+            builder.bodyPct(close.subtract(today.getOpen())
+                    .divide(range, 6, RoundingMode.HALF_UP)
+                    .multiply(BigDecimal.valueOf(100)).setScale(4, RoundingMode.HALF_UP));
+            builder.upperWickPct(today.getHigh().subtract(today.getOpen().max(close))
+                    .divide(range, 6, RoundingMode.HALF_UP)
+                    .multiply(BigDecimal.valueOf(100)).setScale(4, RoundingMode.HALF_UP));
+            builder.lowerWickPct(today.getOpen().min(close).subtract(today.getLow())
+                    .divide(range, 6, RoundingMode.HALF_UP)
+                    .multiply(BigDecimal.valueOf(100)).setScale(4, RoundingMode.HALF_UP));
+        }
+
         for (int horizon : LOOKBACK_HORIZONS) {
             BigDecimal lookbackReturn = i - horizon >= 0 ? pctChange(closes.get(i - horizon), close) : null;
             BigDecimal forwardReturn = i + horizon < closes.size() ? pctChange(close, closes.get(i + horizon)) : null;
