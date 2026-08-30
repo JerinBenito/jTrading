@@ -7,15 +7,19 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Backfills hourly candles for individual NSE equities (e.g. the NIFTY 50 basket, see
- * {@link Nifty50Constituents}) under their own trading symbol as the instrument tag — purely to
- * grow the cross-sectional sample size for the Phase C momentum backtest ({@link
- * com.jerin.trading.forecast.MomentumBacktestService}). Each stock's own time dimension is still
- * only as deep as this backfill's date range; pooling across stocks increases the number of
- * independent series, not the per-series history length.
+ * Backfills and live-ingests hourly candles for individual NSE equities (the NIFTY 50 basket,
+ * see {@link Nifty50Constituents}) under their own trading symbol as the instrument tag.
+ * Originally built purely to grow the cross-sectional sample size for the Phase C momentum
+ * backtest ({@link com.jerin.trading.forecast.MomentumBacktestService}); Phase D reuses the same
+ * per-symbol instrument-key resolution to keep the basket's data live for monitoring (see
+ * {@link com.jerin.trading.monitor.BasketMonitorService}) rather than a one-time historical dump.
+ * Each stock's own time dimension is still only as deep as its backfill's date range; pooling
+ * across stocks increases the number of independent series, not the per-series history length.
  */
 @Service
 public class EquityBasketIngestionService {
@@ -26,13 +30,27 @@ public class EquityBasketIngestionService {
     private final BrokerClient brokerClient;
     private final IngestionService ingestionService;
 
+    /** Equity instrument keys are stable (ISIN-backed), so resolve each symbol at most once per
+     * process lifetime rather than hitting the search endpoint 49 times every single hour. */
+    private final Map<String, String> instrumentKeyCache = new ConcurrentHashMap<>();
+
     public EquityBasketIngestionService(BrokerClient brokerClient, IngestionService ingestionService) {
         this.brokerClient = brokerClient;
         this.ingestionService = ingestionService;
     }
 
+    private Optional<String> resolveInstrumentKey(String symbol) {
+        String cached = instrumentKeyCache.get(symbol);
+        if (cached != null) {
+            return Optional.of(cached);
+        }
+        Optional<String> resolved = brokerClient.findEquityInstrumentKey(symbol);
+        resolved.ifPresent(key -> instrumentKeyCache.put(symbol, key));
+        return resolved;
+    }
+
     public EquityIngestionResult backfillSymbol(String symbol, String unit, int interval, LocalDate from, LocalDate to) {
-        Optional<String> instrumentKey = brokerClient.findEquityInstrumentKey(symbol);
+        Optional<String> instrumentKey = resolveInstrumentKey(symbol);
         if (instrumentKey.isEmpty()) {
             log.warn("No equity instrument_key found for {}", symbol);
             return new EquityIngestionResult(symbol, null, 0, "NOT_FOUND");
@@ -56,6 +74,23 @@ public class EquityBasketIngestionService {
     public List<EquityIngestionResult> backfillBasket(String unit, int interval, LocalDate from, LocalDate to) {
         return Nifty50Constituents.SYMBOLS.stream()
                 .map(symbol -> backfillSymbol(symbol, unit, interval, from, to))
+                .toList();
+    }
+
+    /** Today's live/forming hourly candle for one basket symbol — what the hourly job calls. */
+    public EquityIngestionResult ingestTodayForSymbol(String symbol) {
+        Optional<String> instrumentKey = resolveInstrumentKey(symbol);
+        if (instrumentKey.isEmpty()) {
+            return new EquityIngestionResult(symbol, null, 0, "NOT_FOUND");
+        }
+        int saved = ingestionService.ingestIntradayCandlesForKey(symbol, instrumentKey.get(), "hours", 1);
+        return new EquityIngestionResult(symbol, instrumentKey.get(), saved, "OK");
+    }
+
+    /** Today's live/forming hourly candles for every basket symbol — called once per hourly cycle. */
+    public List<EquityIngestionResult> ingestTodayForBasket() {
+        return Nifty50Constituents.SYMBOLS.stream()
+                .map(this::ingestTodayForSymbol)
                 .toList();
     }
 }

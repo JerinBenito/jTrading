@@ -97,3 +97,17 @@ export interface IntradayReanchorBacktestResult {
   byHour: HourBucketComparison[];
   bigMorningMiss: BigMorningMissComparison;
 }
+
+/** Phase D monitoring snapshot — NIFTY, BANKNIFTY, and the NIFTY 50 basket. Read-only, no signals/confidence attached. */
+export interface BasketSnapshot {
+  symbol: string;
+  lastCandleTs: string;
+  lastClose: number;
+  changePct: number;
+  ema9: number | null;
+  ema21: number | null;
+  trend: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'UNKNOWN';
+  rsi14: number | null;
+  rsiZone: 'OVERBOUGHT' | 'OVERSOLD' | 'NEUTRAL' | 'UNKNOWN';
+  candleCount: number;
+}

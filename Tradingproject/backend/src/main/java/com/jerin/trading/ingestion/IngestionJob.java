@@ -35,6 +35,7 @@ public class IngestionJob implements Job {
     private ForecastPredictionService forecastPredictionService;
     private DailyForecastPredictionService dailyForecastPredictionService;
     private FuturesIngestionService futuresIngestionService;
+    private EquityBasketIngestionService equityBasketIngestionService;
 
     public void setIngestionService(IngestionService ingestionService) {
         this.ingestionService = ingestionService;
@@ -42,6 +43,10 @@ public class IngestionJob implements Job {
 
     public void setFuturesIngestionService(FuturesIngestionService futuresIngestionService) {
         this.futuresIngestionService = futuresIngestionService;
+    }
+
+    public void setEquityBasketIngestionService(EquityBasketIngestionService equityBasketIngestionService) {
+        this.equityBasketIngestionService = equityBasketIngestionService;
     }
 
     public void setSignalService(SignalService signalService) {
@@ -100,6 +105,16 @@ public class IngestionJob implements Job {
             } catch (Exception e) {
                 log.error("Futures ingestion failed for {}", instrument, e);
             }
+        }
+
+        // Once per cycle, not per Instrument — the basket isn't tied to NIFTY/BANKNIFTY. Isolated
+        // from the core pipeline above for the same reason as futures: monitoring-only, read by
+        // BasketMonitorService, never feeds live signals/forecasts, so a failure here must never
+        // affect them.
+        try {
+            equityBasketIngestionService.ingestTodayForBasket();
+        } catch (Exception e) {
+            log.error("Equity basket live ingestion failed", e);
         }
     }
 }

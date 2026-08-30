@@ -18,7 +18,8 @@ public class QuartzConfig {
                                          OutcomeEvaluationService outcomeEvaluationService,
                                          ForecastPredictionService forecastPredictionService,
                                          DailyForecastPredictionService dailyForecastPredictionService,
-                                         FuturesIngestionService futuresIngestionService) {
+                                         FuturesIngestionService futuresIngestionService,
+                                         EquityBasketIngestionService equityBasketIngestionService) {
         JobDataMap jobDataMap = new JobDataMap();
         jobDataMap.put("ingestionService", ingestionService);
         jobDataMap.put("signalService", signalService);
@@ -26,6 +27,7 @@ public class QuartzConfig {
         jobDataMap.put("forecastPredictionService", forecastPredictionService);
         jobDataMap.put("dailyForecastPredictionService", dailyForecastPredictionService);
         jobDataMap.put("futuresIngestionService", futuresIngestionService);
+        jobDataMap.put("equityBasketIngestionService", equityBasketIngestionService);
         return JobBuilder.newJob(IngestionJob.class)
                 .withIdentity("ingestionJob")
                 .usingJobData(jobDataMap)

@@ -1,6 +1,7 @@
 import { API_BASE_URL, Instrument } from '../constants/config';
 import type {
   BacktestResult,
+  BasketSnapshot,
   DailyTrajectory,
   HealthStatus,
   IntradayReanchorBacktestResult,
@@ -66,4 +67,7 @@ export const api = {
 
   getIntradayReanchorBacktest: (instrument: Instrument) =>
     getJson<IntradayReanchorBacktestResult>(`/api/forecast/${instrument}/intraday-reanchor-backtest`),
+
+  // Phase D — live monitoring across NIFTY, BANKNIFTY, and the NIFTY 50 basket. No signals/confidence, just current state.
+  getBasketSnapshot: () => getJson<BasketSnapshot[]>('/api/monitor/basket'),
 };
