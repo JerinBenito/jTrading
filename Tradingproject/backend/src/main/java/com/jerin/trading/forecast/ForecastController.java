@@ -25,6 +25,7 @@ public class ForecastController {
     private final RichHistoricalAnalogBacktestService richHistoricalAnalogBacktestService;
     private final MomentumBacktestService momentumBacktestService;
     private final PooledMomentumBacktestService pooledMomentumBacktestService;
+    private final ChartShapeAnalogBacktestService chartShapeAnalogBacktestService;
 
     public ForecastController(ForecastBacktestService forecastBacktestService,
                                BiasCorrectionBacktestService biasCorrectionBacktestService,
@@ -37,7 +38,8 @@ public class ForecastController {
                                HistoricalAnalogBacktestService historicalAnalogBacktestService,
                                RichHistoricalAnalogBacktestService richHistoricalAnalogBacktestService,
                                MomentumBacktestService momentumBacktestService,
-                               PooledMomentumBacktestService pooledMomentumBacktestService) {
+                               PooledMomentumBacktestService pooledMomentumBacktestService,
+                               ChartShapeAnalogBacktestService chartShapeAnalogBacktestService) {
         this.forecastBacktestService = forecastBacktestService;
         this.biasCorrectionBacktestService = biasCorrectionBacktestService;
         this.dailyForecastBacktestService = dailyForecastBacktestService;
@@ -50,6 +52,7 @@ public class ForecastController {
         this.richHistoricalAnalogBacktestService = richHistoricalAnalogBacktestService;
         this.momentumBacktestService = momentumBacktestService;
         this.pooledMomentumBacktestService = pooledMomentumBacktestService;
+        this.chartShapeAnalogBacktestService = chartShapeAnalogBacktestService;
     }
 
     /** Read-only — computes fresh from stored history each call, nothing persisted (Phase 1 only). */
@@ -127,5 +130,11 @@ public class ForecastController {
     @GetMapping("/pooled-momentum-backtest")
     public PooledMomentumBacktestResult pooledMomentumBacktest() {
         return pooledMomentumBacktestService.compare();
+    }
+
+    /** Does literal candlestick shape (body/wick proportions, short-term up-count) carry information the indicator-only analog (RSI/EMA/return/volatility) misses? */
+    @GetMapping("/{instrument}/chart-shape-analog-backtest")
+    public List<ChartShapeAnalogHourResult> chartShapeAnalogBacktest(@PathVariable String instrument) {
+        return chartShapeAnalogBacktestService.compare(instrument);
     }
 }
