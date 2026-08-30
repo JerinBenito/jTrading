@@ -1,0 +1,7 @@
+# Downloaded data dumps - large, regenerable any time via the download_*.py scripts.
+# Never commit these; re-run the downloader instead of relying on a stale local copy.
+data/
+
+# Local virtual environment - recreate with: python -m venv venv && venv/Scripts/pip install -r requirements.txt
+venv/
+__pycache__/
