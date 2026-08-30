@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors } from '../constants/colors';
 import type { BasketSnapshot } from '../api/types';
 
@@ -14,11 +14,17 @@ function rsiZoneColor(zone: BasketSnapshot['rsiZone']) {
   return colors.textMuted;
 }
 
-export function BasketSnapshotRow({ snapshot }: { snapshot: BasketSnapshot }) {
+export function BasketSnapshotRow({ snapshot, onPress }: { snapshot: BasketSnapshot; onPress?: () => void }) {
   const changeColor = snapshot.changePct >= 0 ? colors.up : colors.down;
+  const hasPrediction = snapshot.deviationFromPredictionPct !== null;
+  const deviationColor = hasPrediction
+    ? snapshot.deviationFromPredictionPct! >= 0
+      ? colors.up
+      : colors.down
+    : colors.textMuted;
 
   return (
-    <View style={styles.row}>
+    <Pressable style={styles.row} onPress={onPress}>
       <View style={styles.left}>
         <Text style={styles.symbol}>{snapshot.symbol}</Text>
         <Text style={styles.close}>{snapshot.lastClose.toFixed(2)}</Text>
@@ -31,11 +37,18 @@ export function BasketSnapshotRow({ snapshot }: { snapshot: BasketSnapshot }) {
           </Text>
         )}
       </View>
-      <Text style={[styles.change, { color: changeColor }]}>
-        {snapshot.changePct >= 0 ? '+' : ''}
-        {snapshot.changePct.toFixed(2)}%
-      </Text>
-    </View>
+      <View style={styles.right}>
+        <Text style={[styles.change, { color: changeColor }]}>
+          {snapshot.changePct >= 0 ? '+' : ''}
+          {snapshot.changePct.toFixed(2)}%
+        </Text>
+        <Text style={[styles.deviation, { color: deviationColor }]}>
+          {hasPrediction
+            ? `${snapshot.deviationFromPredictionPct! >= 0 ? '+' : ''}${snapshot.deviationFromPredictionPct!.toFixed(2)}% vs call`
+            : 'no call yet'}
+        </Text>
+      </View>
+    </Pressable>
   );
 }
 
@@ -75,10 +88,17 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
+  right: {
+    flex: 0.9,
+    alignItems: 'flex-end',
+    gap: 2,
+  },
   change: {
-    flex: 0.7,
-    textAlign: 'right',
     fontSize: 14,
     fontWeight: '700',
+  },
+  deviation: {
+    fontSize: 10,
+    fontWeight: '600',
   },
 });

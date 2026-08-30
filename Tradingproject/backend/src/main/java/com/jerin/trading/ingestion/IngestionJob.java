@@ -88,11 +88,11 @@ public class IngestionJob implements Job {
                 }
                 forecastPredictionService.recordNextPrediction(instrument, INTERVAL);
 
-                int dailyEvaluated = dailyForecastPredictionService.evaluatePending(instrument);
+                int dailyEvaluated = dailyForecastPredictionService.evaluatePending(instrument.name());
                 if (dailyEvaluated > 0) {
                     log.info("{} daily forecast(s) evaluated for {}", dailyEvaluated, instrument);
                 }
-                dailyForecastPredictionService.recordTodayPrediction(instrument);
+                dailyForecastPredictionService.recordTodayPrediction(instrument.name());
             } catch (Exception e) {
                 log.error("Hourly cycle failed for {}", instrument, e);
             }
@@ -108,11 +108,27 @@ public class IngestionJob implements Job {
         }
 
         // Once per cycle, not per Instrument — the basket isn't tied to NIFTY/BANKNIFTY. Isolated
-        // from the core pipeline above for the same reason as futures: monitoring-only, read by
-        // BasketMonitorService, never feeds live signals/forecasts, so a failure here must never
-        // affect them.
+        // from the core pipeline above: a failure ingesting or forecasting one basket stock must
+        // never affect NIFTY/BANKNIFTY's live signals/forecasts, or another basket stock's.
+        //
+        // Only the same-day (close/high/low) forecast runs here, deliberately NOT the pattern
+        // signal engine — PatternStats is keyed by pattern id alone (no instrument column), so
+        // running it against 49 more stocks would corrupt NIFTY/BANKNIFTY's own win-rate stats.
+        // hourly_predictions has no such issue (genuinely keyed by instrument), which is what
+        // makes the same-day forecast safe to extend here.
         try {
-            equityBasketIngestionService.ingestTodayForBasket();
+            List<EquityIngestionResult> basketResults = equityBasketIngestionService.ingestTodayForBasket();
+            for (EquityIngestionResult result : basketResults) {
+                if (!"OK".equals(result.status())) {
+                    continue;
+                }
+                try {
+                    dailyForecastPredictionService.evaluatePending(result.symbol());
+                    dailyForecastPredictionService.recordTodayPrediction(result.symbol());
+                } catch (Exception e) {
+                    log.error("Daily forecast cycle failed for basket stock {}", result.symbol(), e);
+                }
+            }
         } catch (Exception e) {
             log.error("Equity basket live ingestion failed", e);
         }

@@ -3,7 +3,6 @@ package com.jerin.trading.forecast;
 import com.jerin.trading.domain.HourlyPrediction;
 import com.jerin.trading.domain.OhlcvCandle;
 import com.jerin.trading.indicator.AtrCalculator;
-import com.jerin.trading.ingestion.Instrument;
 import com.jerin.trading.repository.HourlyPredictionRepository;
 import com.jerin.trading.repository.OhlcvCandleRepository;
 import org.springframework.stereotype.Service;
@@ -48,19 +47,19 @@ public class DailyTrajectoryService {
     }
 
     /** @param date defaults to today (IST) when null */
-    public DailyTrajectory getTrajectory(Instrument instrument, LocalDate date) {
+    public DailyTrajectory getTrajectory(String instrumentTag, LocalDate date) {
         LocalDate targetDate = date != null ? date : OffsetDateTime.now().atZoneSameInstant(IST).toLocalDate();
 
         OffsetDateTime dayStart = targetDate.atStartOfDay(IST).toOffsetDateTime();
         OffsetDateTime dayEnd = targetDate.plusDays(1).atStartOfDay(IST).toOffsetDateTime();
         List<OhlcvCandle> dayCandles = candleRepository.findByInstrumentAndIntervalAndTsBetweenOrderByTsAsc(
-                instrument.name(), HOURLY_INTERVAL, dayStart, dayEnd);
+                instrumentTag, HOURLY_INTERVAL, dayStart, dayEnd);
         if (dayCandles.isEmpty()) {
             return null; // no trading that day, or no data ingested yet
         }
 
         Optional<HourlyPrediction> prediction = predictionRepository.findByInstrumentAndIntervalAndPredictedForTs(
-                instrument.name(), DAILY_INTERVAL, dayCandles.get(0).getTs());
+                instrumentTag, DAILY_INTERVAL, dayCandles.get(0).getTs());
         if (prediction.isEmpty()) {
             return null; // no daily prediction was recorded for this day
         }
@@ -75,7 +74,7 @@ public class DailyTrajectoryService {
         BigDecimal currentEstimatedRangeHigh = null;
 
         if (p.getActualClose() == null) {
-            BigDecimal atr = yesterdaysDailyAtr(instrument, targetDate);
+            BigDecimal atr = yesterdaysDailyAtr(instrumentTag, targetDate);
             if (atr != null) {
                 OhlcvCandle latest = dayCandles.get(dayCandles.size() - 1);
                 long elapsedMinutes = Duration.between(dayCandles.get(0).getTs(), latest.getTs()).toMinutes();
@@ -90,14 +89,14 @@ public class DailyTrajectoryService {
         }
 
         return new DailyTrajectory(
-                instrument.name(), targetDate, p.getPredictedClose(), p.getRangeLow(), p.getRangeHigh(),
+                instrumentTag, targetDate, p.getPredictedClose(), p.getRangeLow(), p.getRangeHigh(),
                 p.getActualClose(), points,
                 currentEstimatedClose, currentEstimatedRangeLow, currentEstimatedRangeHigh);
     }
 
     /** Daily ATR14 as of the day before `date` — the same basis the static prediction itself was built on. */
-    private BigDecimal yesterdaysDailyAtr(Instrument instrument, LocalDate date) {
-        List<OhlcvCandle> hourlyHistory = candleRepository.findByInstrumentAndIntervalOrderByTsAsc(instrument.name(), HOURLY_INTERVAL);
+    private BigDecimal yesterdaysDailyAtr(String instrumentTag, LocalDate date) {
+        List<OhlcvCandle> hourlyHistory = candleRepository.findByInstrumentAndIntervalOrderByTsAsc(instrumentTag, HOURLY_INTERVAL);
         List<OhlcvCandle> dailyBars = DailyBarAggregator.aggregate(hourlyHistory);
         int todayIndex = -1;
         for (int i = 0; i < dailyBars.size(); i++) {

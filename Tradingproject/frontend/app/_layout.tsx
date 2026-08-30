@@ -11,6 +11,7 @@ export default function RootLayout() {
         <StatusBar style="light" />
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
           <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="stock/[symbol]" />
         </Stack>
       </InstrumentProvider>
     </SafeAreaProvider>

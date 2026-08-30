@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import { colors } from '../../src/constants/colors';
 import { useApiData } from '../../src/hooks/useApiData';
 import { api } from '../../src/api/client';
@@ -9,9 +10,10 @@ import { BasketSnapshotRow } from '../../src/components/BasketSnapshotRow';
 import { EmptyState, ErrorState, LoadingState } from '../../src/components/ScreenState';
 import type { BasketSnapshot } from '../../src/api/types';
 
-type SortMode = 'symbol' | 'gainers' | 'losers';
+type SortMode = 'symbol' | 'gainers' | 'losers' | 'vsCall';
 
 const SORT_OPTIONS: { key: SortMode; label: string }[] = [
+  { key: 'vsCall', label: 'Biggest move vs. call' },
   { key: 'gainers', label: 'Top gainers' },
   { key: 'losers', label: 'Top losers' },
   { key: 'symbol', label: 'A-Z' },
@@ -25,13 +27,24 @@ function sortSnapshots(snapshots: BasketSnapshot[], mode: SortMode) {
   if (mode === 'gainers') {
     return copy.sort((a, b) => b.changePct - a.changePct);
   }
-  return copy.sort((a, b) => a.changePct - b.changePct);
+  if (mode === 'losers') {
+    return copy.sort((a, b) => a.changePct - b.changePct);
+  }
+  // vsCall — biggest absolute deviation from today's predicted close first; no-prediction rows sink to the bottom.
+  return copy.sort((a, b) => {
+    const av = a.deviationFromPredictionPct;
+    const bv = b.deviationFromPredictionPct;
+    if (av === null && bv === null) return 0;
+    if (av === null) return 1;
+    if (bv === null) return -1;
+    return Math.abs(bv) - Math.abs(av);
+  });
 }
 
 export default function MonitorScreen() {
   const insets = useSafeAreaInsets();
   const basket = useApiData(() => api.getBasketSnapshot(), []);
-  const [sortMode, setSortMode] = useState<SortMode>('gainers');
+  const [sortMode, setSortMode] = useState<SortMode>('vsCall');
 
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const onRefresh = useCallback(() => {
@@ -49,7 +62,9 @@ export default function MonitorScreen() {
       contentContainerStyle={[styles.content, { paddingTop: insets.top + 12 }]}
       data={sorted}
       keyExtractor={(item) => item.symbol}
-      renderItem={({ item }) => <BasketSnapshotRow snapshot={item} />}
+      renderItem={({ item }) => (
+        <BasketSnapshotRow snapshot={item} onPress={() => router.push(`/stock/${item.symbol}`)} />
+      )}
       ItemSeparatorComponent={() => <View style={styles.separator} />}
       refreshControl={
         <RefreshControl refreshing={manualRefreshing} onRefresh={onRefresh} tintColor={colors.accent} />
@@ -61,8 +76,9 @@ export default function MonitorScreen() {
             title="Market monitor"
           />
           <Text style={styles.subtitle}>
-            NIFTY, BANKNIFTY, and the NIFTY 50 basket — live price, trend, and RSI. No trading
-            signal or confidence attached, this is a watchlist only.
+            NIFTY, BANKNIFTY, and the NIFTY 50 basket — live price, trend, RSI, and today's
+            close-prediction call. Tap a row for the full intraday chart. No pattern-signal
+            confidence is attached here.
           </Text>
           <View style={styles.sortRow}>
             {SORT_OPTIONS.map((option) => {
@@ -133,7 +149,8 @@ const styles = StyleSheet.create({
   pillLabel: {
     color: colors.textSecondary,
     fontWeight: '600',
-    fontSize: 12,
+    fontSize: 11,
+    textAlign: 'center',
   },
   pillLabelSelected: {
     color: colors.textPrimary,

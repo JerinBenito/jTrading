@@ -98,7 +98,7 @@ export interface IntradayReanchorBacktestResult {
   bigMorningMiss: BigMorningMissComparison;
 }
 
-/** Phase D monitoring snapshot — NIFTY, BANKNIFTY, and the NIFTY 50 basket. Read-only, no signals/confidence attached. */
+/** Phase D monitoring snapshot — NIFTY, BANKNIFTY, and the NIFTY 50 basket. No pattern-signal confidence attached. */
 export interface BasketSnapshot {
   symbol: string;
   lastCandleTs: string;
@@ -110,4 +110,10 @@ export interface BasketSnapshot {
   rsi14: number | null;
   rsiZone: 'OVERBOUGHT' | 'OVERSOLD' | 'NEUTRAL' | 'UNKNOWN';
   candleCount: number;
+  /** Today's same-day close prediction, once the day's first candle exists — null before then. */
+  predictedClose: number | null;
+  predictedRangeLow: number | null;
+  predictedRangeHigh: number | null;
+  /** How far today's price has moved from the morning's predicted close, as a %. Null with no prediction yet. */
+  deviationFromPredictionPct: number | null;
 }

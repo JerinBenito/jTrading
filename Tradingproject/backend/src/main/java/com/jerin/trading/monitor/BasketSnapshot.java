@@ -19,6 +19,12 @@ public record BasketSnapshot(
         String trend,
         BigDecimal rsi14,
         String rsiZone,
-        int candleCount
+        int candleCount,
+        /** Today's same-day close prediction, when one has been recorded — null before the day's first candle. */
+        BigDecimal predictedClose,
+        BigDecimal predictedRangeLow,
+        BigDecimal predictedRangeHigh,
+        /** (lastClose - predictedClose) / predictedClose * 100 — how far today's price has moved from the morning call. Null with no prediction yet. */
+        BigDecimal deviationFromPredictionPct
 ) {
 }

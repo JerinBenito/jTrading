@@ -3,7 +3,6 @@ package com.jerin.trading.forecast;
 import com.jerin.trading.domain.HourlyPrediction;
 import com.jerin.trading.domain.OhlcvCandle;
 import com.jerin.trading.indicator.AtrCalculator;
-import com.jerin.trading.ingestion.Instrument;
 import com.jerin.trading.repository.HourlyPredictionRepository;
 import com.jerin.trading.repository.OhlcvCandleRepository;
 import org.slf4j.Logger;
@@ -38,6 +37,11 @@ import java.util.List;
  * independently from the hourly loop's multiplier) — the daily range was already close to
  * well-calibrated in the backtest (NIFTY 90.55%, BANKNIFTY 89.94% against a 90% target), so
  * this mostly keeps it that way rather than making a large correction.
+ *
+ * Takes a plain instrument tag (not the {@code Instrument} enum) since 2026-08-30 — extended to
+ * the NIFTY 50 basket stocks (Phase D), which aren't in that enum. Safe to do because
+ * {@code hourly_predictions} is genuinely keyed by (instrument, interval, predicted_for_ts),
+ * unlike {@code pattern_stats} (keyed by pattern id alone) — no cross-instrument corruption risk.
  */
 @Service
 public class DailyForecastPredictionService {
@@ -66,9 +70,9 @@ public class DailyForecastPredictionService {
     }
 
     @Transactional
-    public int evaluatePending(Instrument instrument) {
+    public int evaluatePending(String instrumentTag) {
         List<HourlyPrediction> pending = predictionRepository
-                .findByInstrumentAndIntervalAndActualCloseIsNull(instrument.name(), INTERVAL);
+                .findByInstrumentAndIntervalAndActualCloseIsNull(instrumentTag, INTERVAL);
         if (pending.isEmpty()) {
             return 0;
         }
@@ -82,7 +86,7 @@ public class DailyForecastPredictionService {
                 continue; // that trading day isn't over yet
             }
 
-            List<OhlcvCandle> dayCandles = candlesForDay(instrument, predictionDate);
+            List<OhlcvCandle> dayCandles = candlesForDay(instrumentTag, predictionDate);
             if (dayCandles.isEmpty()) {
                 continue; // shouldn't happen — a prediction is only ever recorded once that day's first candle exists
             }
@@ -91,7 +95,7 @@ public class DailyForecastPredictionService {
                     .divide(actual, 6, RoundingMode.HALF_UP).doubleValue() * 100;
 
             boolean covered = actual.compareTo(prediction.getRangeLow()) >= 0 && actual.compareTo(prediction.getRangeHigh()) <= 0;
-            rangeCalibrationService.recordOutcome(instrument.name(), INTERVAL, covered);
+            rangeCalibrationService.recordOutcome(instrumentTag, INTERVAL, covered);
 
             prediction.setActualClose(actual);
             prediction.setErrorPct(BigDecimal.valueOf(errorPct).setScale(4, RoundingMode.HALF_UP));
@@ -100,25 +104,25 @@ public class DailyForecastPredictionService {
             evaluated++;
         }
         if (evaluated > 0) {
-            log.info("Evaluated {} pending daily prediction(s) for {}", evaluated, instrument);
+            log.info("Evaluated {} pending daily prediction(s) for {}", evaluated, instrumentTag);
         }
         return evaluated;
     }
 
     @Transactional
-    public HourlyPrediction recordTodayPrediction(Instrument instrument) {
+    public HourlyPrediction recordTodayPrediction(String instrumentTag) {
         LocalDate today = OffsetDateTime.now().atZoneSameInstant(IST).toLocalDate();
-        List<OhlcvCandle> todayCandles = candlesForDay(instrument, today);
+        List<OhlcvCandle> todayCandles = candlesForDay(instrumentTag, today);
         if (todayCandles.isEmpty()) {
             return null; // no candle for today yet
         }
 
         OffsetDateTime predictedForTs = todayCandles.get(0).getTs();
-        if (predictionRepository.findByInstrumentAndIntervalAndPredictedForTs(instrument.name(), INTERVAL, predictedForTs).isPresent()) {
+        if (predictionRepository.findByInstrumentAndIntervalAndPredictedForTs(instrumentTag, INTERVAL, predictedForTs).isPresent()) {
             return null; // already predicted today
         }
 
-        List<OhlcvCandle> hourlyHistory = candleRepository.findByInstrumentAndIntervalOrderByTsAsc(instrument.name(), SOURCE_INTERVAL);
+        List<OhlcvCandle> hourlyHistory = candleRepository.findByInstrumentAndIntervalOrderByTsAsc(instrumentTag, SOURCE_INTERVAL);
         List<OhlcvCandle> dailyBars = DailyBarAggregator.aggregate(hourlyHistory);
         if (dailyBars.size() < 2) {
             return null; // need at least one prior complete day for ATR
@@ -130,14 +134,14 @@ public class DailyForecastPredictionService {
             return null;
         }
 
-        BigDecimal bias = rollingBias(instrument);
+        BigDecimal bias = rollingBias(instrumentTag);
         BigDecimal correctedClose = basePrediction.predictedClose().add(bias).setScale(2, RoundingMode.HALF_UP);
-        double multiplier = rangeCalibrationService.currentMultiplier(instrument.name(), INTERVAL);
+        double multiplier = rangeCalibrationService.currentMultiplier(instrumentTag, INTERVAL);
         BigDecimal rangeWidth = basePrediction.rangeHigh().subtract(basePrediction.predictedClose())
                 .multiply(BigDecimal.valueOf(multiplier)).setScale(4, RoundingMode.HALF_UP);
 
         HourlyPrediction prediction = HourlyPrediction.builder()
-                .instrument(instrument.name())
+                .instrument(instrumentTag)
                 .interval(INTERVAL)
                 .modelName(MODEL_NAME)
                 .predictedAtTs(predictedForTs)
@@ -151,16 +155,16 @@ public class DailyForecastPredictionService {
         return predictionRepository.save(prediction);
     }
 
-    private List<OhlcvCandle> candlesForDay(Instrument instrument, LocalDate date) {
+    private List<OhlcvCandle> candlesForDay(String instrumentTag, LocalDate date) {
         OffsetDateTime dayStart = date.atStartOfDay(IST).toOffsetDateTime();
         OffsetDateTime dayEnd = date.plusDays(1).atStartOfDay(IST).toOffsetDateTime();
         return candleRepository.findByInstrumentAndIntervalAndTsBetweenOrderByTsAsc(
-                instrument.name(), SOURCE_INTERVAL, dayStart, dayEnd);
+                instrumentTag, SOURCE_INTERVAL, dayStart, dayEnd);
     }
 
     /** Significance-gated bias correction over the last BIAS_WINDOW evaluated daily predictions — see {@link BiasCorrectionCalculator}. */
-    private BigDecimal rollingBias(Instrument instrument) {
-        List<HourlyPrediction> recent = predictionRepository.findRecentEvaluated(instrument.name(), INTERVAL);
+    private BigDecimal rollingBias(String instrumentTag) {
+        List<HourlyPrediction> recent = predictionRepository.findRecentEvaluated(instrumentTag, INTERVAL);
         List<Double> errors = recent.stream()
                 .limit(BIAS_WINDOW)
                 .map(p -> p.getActualClose().subtract(p.getPredictedClose()).doubleValue())

@@ -25,8 +25,9 @@ export const api = {
   getForecastHistory: (instrument: Instrument, interval: '1h' | '1d') =>
     getJson<Prediction[]>(`/api/forecast/${instrument}/history?interval=${interval}`),
 
-  /** Undefined date = today (IST), matching the backend's default. Returns null if no prediction exists yet for that day. */
-  getTrajectory: (instrument: Instrument, date?: string) =>
+  /** Undefined date = today (IST), matching the backend's default. Returns null if no prediction exists yet for that day.
+   *  `instrument` accepts NIFTY/BANKNIFTY as before, or any NIFTY 50 basket trading symbol (Phase D). */
+  getTrajectory: (instrument: string, date?: string) =>
     getJson<DailyTrajectory | null>(
       `/api/forecast/${instrument}/daily/trajectory${date ? `?date=${date}` : ''}`
     ),
