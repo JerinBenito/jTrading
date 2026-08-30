@@ -2,7 +2,6 @@ package com.jerin.trading.forecast;
 
 import com.jerin.trading.domain.OhlcvCandle;
 import com.jerin.trading.indicator.AtrCalculator;
-import com.jerin.trading.ingestion.Instrument;
 import com.jerin.trading.repository.OhlcvCandleRepository;
 import org.springframework.stereotype.Service;
 
@@ -37,8 +36,8 @@ public class IntradayReanchorBacktestService {
         this.candleRepository = candleRepository;
     }
 
-    public IntradayReanchorBacktestResult compare(Instrument instrument) {
-        List<OhlcvCandle> hourly = candleRepository.findByInstrumentAndIntervalOrderByTsAsc(instrument.name(), SOURCE_INTERVAL);
+    public IntradayReanchorBacktestResult compare(String instrumentTag) {
+        List<OhlcvCandle> hourly = candleRepository.findByInstrumentAndIntervalOrderByTsAsc(instrumentTag, SOURCE_INTERVAL);
         List<List<OhlcvCandle>> days = DailyBarAggregator.groupByDay(hourly);
         List<OhlcvCandle> dailyBars = DailyBarAggregator.aggregate(hourly);
         List<BigDecimal> dailyAtr14 = AtrCalculator.calculate(dailyBars, ATR_PERIOD);

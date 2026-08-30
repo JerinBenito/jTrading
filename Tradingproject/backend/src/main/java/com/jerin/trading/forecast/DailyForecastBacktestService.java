@@ -3,7 +3,6 @@ package com.jerin.trading.forecast;
 import com.jerin.trading.domain.OhlcvCandle;
 import com.jerin.trading.indicator.AtrCalculator;
 import com.jerin.trading.indicator.EmaCalculator;
-import com.jerin.trading.ingestion.Instrument;
 import com.jerin.trading.repository.OhlcvCandleRepository;
 import org.springframework.stereotype.Service;
 
@@ -33,8 +32,8 @@ public class DailyForecastBacktestService {
         this.models = models;
     }
 
-    public List<ForecastBacktestResult> backtest(Instrument instrument) {
-        List<OhlcvCandle> hourly = candleRepository.findByInstrumentAndIntervalOrderByTsAsc(instrument.name(), SOURCE_INTERVAL);
+    public List<ForecastBacktestResult> backtest(String instrumentTag) {
+        List<OhlcvCandle> hourly = candleRepository.findByInstrumentAndIntervalOrderByTsAsc(instrumentTag, SOURCE_INTERVAL);
         List<OhlcvCandle> daily = DailyBarAggregator.aggregate(hourly);
         if (daily.size() < 30) {
             return List.of();

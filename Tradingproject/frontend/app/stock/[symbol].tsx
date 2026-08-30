@@ -7,6 +7,8 @@ import { colors } from '../../src/constants/colors';
 import { useApiData } from '../../src/hooks/useApiData';
 import { api } from '../../src/api/client';
 import { TrajectoryChart } from '../../src/components/TrajectoryChart';
+import { BacktestResultTable } from '../../src/components/BacktestResultTable';
+import { IntradayReanchorTable } from '../../src/components/IntradayReanchorTable';
 import { EmptyState, ErrorState, LoadingState } from '../../src/components/ScreenState';
 
 function formatPrice(value: number) {
@@ -17,11 +19,19 @@ export default function StockDetailScreen() {
   const { symbol } = useLocalSearchParams<{ symbol: string }>();
   const insets = useSafeAreaInsets();
   const trajectory = useApiData(() => api.getTrajectory(symbol), [symbol]);
+  const dailyModel = useApiData(() => api.getDailyModelBacktest(symbol), [symbol]);
+  const dailyBias = useApiData(() => api.getDailyBiasCorrectionBacktest(symbol), [symbol]);
+  const dailyRange = useApiData(() => api.getDailyRangeCalibrationBacktest(symbol), [symbol]);
+  const reanchor = useApiData(() => api.getIntradayReanchorBacktest(symbol), [symbol]);
 
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const onRefresh = useCallback(() => {
     setManualRefreshing(true);
     trajectory.refresh();
+    dailyModel.refresh();
+    dailyBias.refresh();
+    dailyRange.refresh();
+    reanchor.refresh();
     setTimeout(() => setManualRefreshing(false), 600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -88,6 +98,24 @@ export default function StockDetailScreen() {
           </Text>
         </>
       )}
+
+      <Text style={styles.sectionLabel}>Analysis — walk-forward, recomputed from {symbol}'s own history</Text>
+      {reanchor.data && <IntradayReanchorTable result={reanchor.data} />}
+      <BacktestResultTable
+        title="Model choice"
+        subtitle="random walk vs. EMA-spread momentum"
+        results={dailyModel.data ?? []}
+      />
+      <BacktestResultTable
+        title="Bias correction"
+        subtitle="none vs. naive 20-avg vs. significance-gated"
+        results={dailyBias.data ?? []}
+      />
+      <BacktestResultTable
+        title="Range calibration"
+        subtitle="fixed ±1x ATR vs. online-adaptive multiplier"
+        results={dailyRange.data ?? []}
+      />
     </ScrollView>
   );
 }
@@ -183,5 +211,11 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 11,
     lineHeight: 16,
+  },
+  sectionLabel: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 6,
   },
 });

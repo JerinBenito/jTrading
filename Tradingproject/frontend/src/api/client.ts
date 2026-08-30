@@ -35,7 +35,7 @@ export const api = {
   getSignalHistory: (instrument: Instrument) =>
     getJson<SignalHistoryEntry[]>(`/api/signals/${instrument}/history`),
 
-  getRangeCalibration: (instrument: Instrument, interval: '1h' | '1d') =>
+  getRangeCalibration: (instrument: string, interval: '1h' | '1d') =>
     getJson<RangeCalibrationStatus>(
       `/api/forecast/${instrument}/range-calibration?interval=${interval}`
     ),
@@ -47,13 +47,14 @@ export const api = {
   getModelBacktest: (instrument: Instrument) =>
     getJson<BacktestResult[]>(`/api/forecast/${instrument}/backtest?interval=1h`),
 
-  getDailyModelBacktest: (instrument: Instrument) =>
+  // instrument: string below (not the Instrument union) — these 4 accept NIFTY/BANKNIFTY or any basket symbol (Phase D).
+  getDailyModelBacktest: (instrument: string) =>
     getJson<BacktestResult[]>(`/api/forecast/${instrument}/daily-backtest`),
 
   getBiasCorrectionBacktest: (instrument: Instrument) =>
     getJson<BacktestResult[]>(`/api/forecast/${instrument}/bias-correction-backtest?interval=1h`),
 
-  getDailyBiasCorrectionBacktest: (instrument: Instrument) =>
+  getDailyBiasCorrectionBacktest: (instrument: string) =>
     getJson<BacktestResult[]>(`/api/forecast/${instrument}/daily-bias-correction-backtest`),
 
   getRangeCalibrationBacktest: (instrument: Instrument) =>
@@ -61,12 +62,12 @@ export const api = {
       `/api/forecast/${instrument}/range-calibration-backtest?interval=1h`
     ),
 
-  getDailyRangeCalibrationBacktest: (instrument: Instrument) =>
+  getDailyRangeCalibrationBacktest: (instrument: string) =>
     getJson<RangeCalibrationBacktestResult[]>(
       `/api/forecast/${instrument}/daily-range-calibration-backtest`
     ),
 
-  getIntradayReanchorBacktest: (instrument: Instrument) =>
+  getIntradayReanchorBacktest: (instrument: string) =>
     getJson<IntradayReanchorBacktestResult>(`/api/forecast/${instrument}/intraday-reanchor-backtest`),
 
   // Phase D — live monitoring across NIFTY, BANKNIFTY, and the NIFTY 50 basket. No signals/confidence, just current state.

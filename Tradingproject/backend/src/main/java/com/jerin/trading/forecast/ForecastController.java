@@ -66,15 +66,16 @@ public class ForecastController {
         return biasCorrectionBacktestService.compare(instrument, interval);
     }
 
-    /** Same-day open-to-close: compares candidate models (random walk vs EMA-spread momentum), built from hourly candles. */
+    /** Same-day open-to-close: compares candidate models (random walk vs EMA-spread momentum), built from hourly candles.
+     *  {@code instrument} accepts NIFTY/BANKNIFTY or any NIFTY 50 basket symbol (Phase D). */
     @GetMapping("/{instrument}/daily-backtest")
-    public List<ForecastBacktestResult> dailyBacktest(@PathVariable Instrument instrument) {
+    public List<ForecastBacktestResult> dailyBacktest(@PathVariable String instrument) {
         return dailyForecastBacktestService.backtest(instrument);
     }
 
     /** Same-day open-to-close: compares correction strategies (none / naive-20-avg / significance-gated). */
     @GetMapping("/{instrument}/daily-bias-correction-backtest")
-    public List<ForecastBacktestResult> dailyBiasCorrectionBacktest(@PathVariable Instrument instrument) {
+    public List<ForecastBacktestResult> dailyBiasCorrectionBacktest(@PathVariable String instrument) {
         return dailyBiasCorrectionBacktestService.compare(instrument);
     }
 
@@ -87,20 +88,20 @@ public class ForecastController {
 
     /** Same as above, for the same-day open-to-close prediction. */
     @GetMapping("/{instrument}/daily-range-calibration-backtest")
-    public List<RangeCalibrationBacktestResult> dailyRangeCalibrationBacktest(@PathVariable Instrument instrument) {
+    public List<RangeCalibrationBacktestResult> dailyRangeCalibrationBacktest(@PathVariable String instrument) {
         return dailyRangeCalibrationBacktestService.compare(instrument);
     }
 
     /** The multiplier currently being applied to new predictions right now, and when it last moved. */
     @GetMapping("/{instrument}/range-calibration")
-    public RangeCalibrationStatus rangeCalibrationStatus(@PathVariable Instrument instrument,
+    public RangeCalibrationStatus rangeCalibrationStatus(@PathVariable String instrument,
                                                            @RequestParam(defaultValue = "1h") String interval) {
-        return rangeCalibrationService.status(instrument.name(), interval);
+        return rangeCalibrationService.status(instrument, interval);
     }
 
     /** Static (once-a-day) vs. intraday re-anchored same-day close prediction, by hour, plus the "big morning miss" scenario specifically. */
     @GetMapping("/{instrument}/intraday-reanchor-backtest")
-    public IntradayReanchorBacktestResult intradayReanchorBacktest(@PathVariable Instrument instrument) {
+    public IntradayReanchorBacktestResult intradayReanchorBacktest(@PathVariable String instrument) {
         return intradayReanchorBacktestService.compare(instrument);
     }
 
