@@ -2,6 +2,7 @@ package com.jerin.trading.broker;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 public interface BrokerClient {
 
@@ -26,4 +27,14 @@ public interface BrokerClient {
      * @param expiry an ISO date (YYYY-MM-DD) or a broker-supported keyword such as "current_week"
      */
     List<OptionChainEntry> getOptionChain(String instrumentKey, String expiry);
+
+    /**
+     * The nearest-expiry (soonest not-yet-expired) tradable futures contract for a given
+     * underlying — e.g. "NIFTY" or "BANKNIFTY". Unlike the underlying index itself, a futures
+     * contract carries real trading volume.
+     */
+    Optional<FuturesContract> findNearMonthFuture(String underlyingSymbol);
+
+    /** @return the NSE equity instrument_key for a trading symbol (e.g. "RELIANCE"), if listed */
+    Optional<String> findEquityInstrumentKey(String tradingSymbol);
 }

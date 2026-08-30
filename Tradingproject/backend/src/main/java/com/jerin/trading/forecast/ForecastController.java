@@ -21,6 +21,10 @@ public class ForecastController {
     private final DailyRangeCalibrationBacktestService dailyRangeCalibrationBacktestService;
     private final RangeCalibrationService rangeCalibrationService;
     private final IntradayReanchorBacktestService intradayReanchorBacktestService;
+    private final HistoricalAnalogBacktestService historicalAnalogBacktestService;
+    private final RichHistoricalAnalogBacktestService richHistoricalAnalogBacktestService;
+    private final MomentumBacktestService momentumBacktestService;
+    private final PooledMomentumBacktestService pooledMomentumBacktestService;
 
     public ForecastController(ForecastBacktestService forecastBacktestService,
                                BiasCorrectionBacktestService biasCorrectionBacktestService,
@@ -29,7 +33,11 @@ public class ForecastController {
                                RangeCalibrationBacktestService rangeCalibrationBacktestService,
                                DailyRangeCalibrationBacktestService dailyRangeCalibrationBacktestService,
                                RangeCalibrationService rangeCalibrationService,
-                               IntradayReanchorBacktestService intradayReanchorBacktestService) {
+                               IntradayReanchorBacktestService intradayReanchorBacktestService,
+                               HistoricalAnalogBacktestService historicalAnalogBacktestService,
+                               RichHistoricalAnalogBacktestService richHistoricalAnalogBacktestService,
+                               MomentumBacktestService momentumBacktestService,
+                               PooledMomentumBacktestService pooledMomentumBacktestService) {
         this.forecastBacktestService = forecastBacktestService;
         this.biasCorrectionBacktestService = biasCorrectionBacktestService;
         this.dailyForecastBacktestService = dailyForecastBacktestService;
@@ -38,6 +46,10 @@ public class ForecastController {
         this.dailyRangeCalibrationBacktestService = dailyRangeCalibrationBacktestService;
         this.rangeCalibrationService = rangeCalibrationService;
         this.intradayReanchorBacktestService = intradayReanchorBacktestService;
+        this.historicalAnalogBacktestService = historicalAnalogBacktestService;
+        this.richHistoricalAnalogBacktestService = richHistoricalAnalogBacktestService;
+        this.momentumBacktestService = momentumBacktestService;
+        this.pooledMomentumBacktestService = pooledMomentumBacktestService;
     }
 
     /** Read-only — computes fresh from stored history each call, nothing persisted (Phase 1 only). */
@@ -90,5 +102,29 @@ public class ForecastController {
     @GetMapping("/{instrument}/intraday-reanchor-backtest")
     public IntradayReanchorBacktestResult intradayReanchorBacktest(@PathVariable Instrument instrument) {
         return intradayReanchorBacktestService.compare(instrument);
+    }
+
+    /** Plain volatility-scaled re-anchor vs. k-NN historical-analog estimate (Phase B — see project long-term roadmap), by hour. */
+    @GetMapping("/{instrument}/historical-analog-backtest")
+    public List<HistoricalAnalogHourResult> historicalAnalogBacktest(@PathVariable Instrument instrument) {
+        return historicalAnalogBacktestService.compare(instrument);
+    }
+
+    /** Same as above, plus a richer analog matched on return-so-far + volatility-so-far + RSI + EMA spread, not return alone. */
+    @GetMapping("/{instrument}/rich-historical-analog-backtest")
+    public List<RichHistoricalAnalogHourResult> richHistoricalAnalogBacktest(@PathVariable Instrument instrument) {
+        return richHistoricalAnalogBacktestService.compare(instrument);
+    }
+
+    /** Phase C, first test: does past ~2-month return predict the next ~2-month return (time-series momentum)? */
+    @GetMapping("/{instrument}/momentum-backtest")
+    public MomentumBacktestResult momentumBacktest(@PathVariable Instrument instrument) {
+        return momentumBacktestService.compare(instrument);
+    }
+
+    /** Same momentum test as above, but pooled across NIFTY + BANKNIFTY + the backfilled NIFTY 50 basket for a larger cross-sectional sample. */
+    @GetMapping("/pooled-momentum-backtest")
+    public PooledMomentumBacktestResult pooledMomentumBacktest() {
+        return pooledMomentumBacktestService.compare();
     }
 }

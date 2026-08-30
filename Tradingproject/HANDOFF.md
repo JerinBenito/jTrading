@@ -159,6 +159,20 @@ A genuinely useful, honest finding: the hourly range was quietly under-covering 
 
 **Deployed live**: both `ForecastPredictionService` and `DailyForecastPredictionService` now record whether each evaluated prediction was covered (updating the stored multiplier one step at a time) and scale the next prediction's range by the current multiplier. New endpoint `GET /api/forecast/{instrument}/range-calibration?interval=1h|1d` shows the live multiplier and when it last moved — starts at 1.0000 for all four combos until real evaluations accumulate. Migration `V3__add_range_calibration_state.sql` applied cleanly on deploy.
 
+## Volume-confirmation backtest built 2026-08-26 — real finding: no volume data exists yet
+Explored whether trading volume (already ingested via `OhlcvCandle.volume`, never used anywhere) could strengthen the 4 existing pattern signals — a classic TA idea: a pattern firing on unusually high volume is traditionally more reliable. Built `VolumeConfirmationBacktestService` (`GET /api/patterns/{instrument}/volume-confirmation-backtest?interval=1h`) to test this empirically rather than assume it: segments each pattern's historical occurrences into HIGH volume (≥1.5x the trailing 20-bar average), NORMAL, or UNKNOWN (missing/zero volume), and compares win rates per bucket.
+
+**Real result**: every single occurrence across both instruments and all 4 patterns (770+ combined) fell into UNKNOWN — zero in HIGH, zero in NORMAL. Verified this is a genuine data limitation, not a pipeline bug (volume is correctly wired through `Candle` → `IngestionService` → `OhlcvCandle`): Upstox reports zero/null volume for the NIFTY/BANKNIFTY **index** candles themselves, since an index isn't a directly-traded instrument — only its futures/options contracts have real traded volume.
+
+**Decision**: leave the backtest endpoint in place (harmless, dead until real volume data exists) rather than revert it. Revisit once futures or commodities data ever gets added — that's the real fix (switching to or additionally ingesting the NIFTY/BANKNIFTY futures contracts, which would need rollover handling since futures expire monthly, unlike the perpetual index) — not something to build speculatively now.
+
+## Monte Carlo bootstrap range tested and rejected 2026-08-26
+Tested whether bootstrap-resampling real historical returns (instead of assuming a symmetric ATR-based band) would produce better-calibrated prediction ranges than the current online-adaptive multiplier. Built `MonteCarloSimulator` + `MonteCarloBacktestService`/`DailyMonteCarloBacktestService`, backtested against 2 years of real history across both instruments and both timeframes.
+
+**Result: no consistent improvement, one clear regression.** Hourly was roughly a wash (slightly narrower ranges, slightly lower coverage than the adaptive approach already live). BANKNIFTY daily was measurably worse — coverage dropped to 88.01% vs. the adaptive approach's 90.27%, for no error improvement. Same conclusion as when the momentum model lost to plain random walk: the added complexity (2000 simulations per prediction) didn't earn its keep against what's already live.
+
+**Reverted** — all 4 new files deleted, `ForecastController` restored, redeployed. Confirmed live: `/monte-carlo-backtest` returns 404, everything else unaffected. Nothing about this experiment is documented in code (it's gone), only here — a clean example of "backtest before trust" catching a negative result before it ever reached production.
+
 ## What's built (all working, tested)
 - Upstox broker adapter (candles + option chain), OAuth login flow
 - Hourly ingestion + signal generation + outcome evaluation, fully automatic
@@ -173,6 +187,7 @@ A genuinely useful, honest finding: the hourly range was quietly under-covering 
 - PCR-based pattern (no historical option-chain data source exists to backtest one against)
 - Notifications (Telegram/email) — would solve "how do I know without checking" more elegantly than manually hitting `/history`
 - Arbitrary-stock long-horizon (2-3 month) range prediction — flagged as a much bigger, separate initiative (different math, needs new instrument lookup/backfill, different on-demand interaction pattern), not started, needs its own scoping discussion first
+- Volume-confirmed pattern signals — backtest tooling exists (`/api/patterns/{instrument}/volume-confirmation-backtest`) but is currently a dead end: NIFTY/BANKNIFTY index candles carry no real volume data. Blocked on futures/commodities data ever being added (see below) — revisit then, not before
 
 ## Known constraints worth remembering
 - Instances are tiny (1 OCPU/1GB RAM each, Always Free tier) — needed swap space added on both VMs to avoid OOM kills during package installs
@@ -181,15 +196,29 @@ A genuinely useful, honest finding: the hourly range was quietly under-covering 
 - The free Ampere (ARM, bigger) shape has been consistently "out of capacity" in this region — don't bother retrying unless there's a specific reason to
 - Both VMs are within Oracle's Always Free allowance (2x `VM.Standard.E2.1.Micro`) — confirmed via Oracle's own docs, genuinely costs nothing
 
-## Redeploy procedure (for future code changes)
-1. `cd backend && ./mvnw clean package -DskipTests` (builds `target/signal-backend-0.0.1-SNAPSHOT.jar`)
-2. Upload that jar to Cloud Shell (☰/⋮ menu → Upload)
-3. In Cloud Shell: `scp -i ~/.ssh/trading_vm_key signal-backend-0.0.1-SNAPSHOT.jar opc@140.245.255.99:~/`
-4. `ssh -i ~/.ssh/trading_vm_key opc@140.245.255.99 "sudo systemctl restart trading-signal"`
-5. Wait ~20-40s, then check `https://jerintradingsignal.duckdns.org/actuator/health`
+## Redeploy procedure (for future code changes) — updated 2026-08-30, no more Cloud Shell
+Cloud Shell's browser upload widget was unreliable over mobile data (stalled at random %, no resume). Replaced with a dedicated direct-SSH keypair (`~/.ssh/trading_vm_direct_key`, public half added to the VM's `authorized_keys`) so every redeploy goes straight from the local machine:
+1. `cd backend && ./mvnw.cmd clean package -DskipTests` (builds `target/signal-backend-0.0.1-SNAPSHOT.jar`)
+2. `scp -i ~/.ssh/trading_vm_direct_key target/signal-backend-0.0.1-SNAPSHOT.jar opc@140.245.255.99:~/signal-backend-0.0.1-SNAPSHOT.jar`
+3. `ssh -i ~/.ssh/trading_vm_direct_key opc@140.245.255.99 "sudo systemctl restart trading-signal"`
+4. Wait ~20-40s, then check `https://jerintradingsignal.duckdns.org/actuator/health`
+5. Re-login to Upstox (`/auth/upstox/login-url`) — the access token lives in memory only and is wiped by every restart
 
 ## Longer-term next steps (not urgent, discuss when ready)
 - Let both the pattern system and the forecast loop run live for real and accumulate real predicted-vs-actual data over time
 - Consider Telegram/email notifications instead of manually checking `/history`
 - Consider building out the frontend now that there's a stable public URL
-- Longer-term scope discussed but not started: Sensex (needs separate BSE data source), options chains (flagged as the most likely thing to force a move off free tier), broader equities, commodities (MCX, separate pipeline), eventual public mobile app (compliance/SEBI RA registration considerations noted if ever made public, not relevant for personal use)
+- Longer-term scope discussed but not started: Sensex (needs separate BSE data source), options chains (flagged as the most likely thing to force a move off free tier), commodities (MCX, separate pipeline), eventual public mobile app (compliance/SEBI RA registration considerations noted if ever made public, not relevant for personal use)
+
+## Update 2026-08-30 — Phase B and Phase C concluded (both negative, both real findings)
+Since the 08-25 snapshot above: a mobile app (Expo/React Native) was built out (Dashboard/History/Signals/Analysis/Login tabs), futures ingestion was added (`NIFTY_FUT`/`BANKNIFTY_FUT`, unblocks the volume-confirmation backtest since the index itself carries no volume), Monte Carlo bootstrap resampling for prediction ranges was tested and reverted (no improvement over the simple ATR range), and the repo had its first-ever git commit (`e9a4406`) after removing a leaked Upstox API secret found in `.claude/settings.local.json`.
+
+**Phase B (historical-analog daily forecast)** — concluded: neither a single-feature nor a richer 4-feature (return-so-far, volatility-so-far, RSI14, EMA9/21 spread) k-NN analog model beat the existing plain volatility-scaled re-anchor baseline at most hours. Kept live as documented findings: `GET /api/forecast/{instrument}/historical-analog-backtest`, `GET /api/forecast/{instrument}/rich-historical-analog-backtest`. Not wired into the live daily forecast.
+
+**Phase C (multi-month momentum)** — concluded: no exploitable momentum at a 40-day horizon. First pass on NIFTY/BANKNIFTY alone was underpowered (~12 non-overlapping windows); pooled the test across a NIFTY-50 stock basket (49/50 symbols resolved and backfilled 2 years hourly — `TATAMOTORS` is the one holdout, likely the 2024-2025 demerger) to reach 614 non-overlapping-equivalent samples. Result: correlation -0.0304 (~zero), quartile buckets show a slight mean-reversion tilt rather than momentum, win rates ~50-54% everywhere. New endpoints, all kept live:
+- `POST /api/ingestion/equity-basket/{symbol}/backfill` — single-symbol equity backfill (test before batch)
+- `POST /api/ingestion/equity-basket/backfill` — full 50-symbol basket backfill
+- `GET /api/forecast/{instrument}/momentum-backtest` — single-instrument momentum test
+- `GET /api/forecast/pooled-momentum-backtest` — the pooled/basket version (no `{instrument}` — pools NIFTY+BANKNIFTY+basket)
+
+Net effect across the whole session: four independent tests (short-horizon momentum-vs-random-walk, Monte Carlo bootstrap, historical-analog, multi-month momentum) all confirm the deterministic/classical-stats toolkit finds no exploitable edge at any horizon tried so far on NIFTY/BANKNIFTY. Full detail and reasoning in project memory (`project_trading_signal_longterm_vision.md`, not in this repo). Phase D (expand instrument coverage / commodities / options) is next per the long-term roadmap, not started yet. Everything since commit `e9a4406` is uncommitted.

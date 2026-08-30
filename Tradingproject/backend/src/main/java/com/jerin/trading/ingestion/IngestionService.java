@@ -39,25 +39,45 @@ public class IngestionService {
     @Transactional
     public int ingestCandles(Instrument instrument, String unit, int interval, LocalDate from, LocalDate to) {
         List<Candle> candles = brokerClient.getCandles(instrument.brokerKey(), unit, interval, from, to);
-        return saveNewCandles(instrument, unit, interval, candles);
+        return saveNewCandles(instrument.name(), unit, interval, candles);
     }
 
     /** Today's live/forming candles — what the hourly job needs; {@link #ingestCandles} would return nothing for "today". */
     @Transactional
     public int ingestIntradayCandles(Instrument instrument, String unit, int interval) {
         List<Candle> candles = brokerClient.getIntradayCandles(instrument.brokerKey(), unit, interval);
-        return saveNewCandles(instrument, unit, interval, candles);
+        return saveNewCandles(instrument.name(), unit, interval, candles);
     }
 
-    private int saveNewCandles(Instrument instrument, String unit, int interval, List<Candle> candles) {
+    /**
+     * Same as {@link #ingestCandles} but for an instrument outside the fixed {@link Instrument}
+     * enum — e.g. a futures contract, whose broker instrument_key changes month to month and is
+     * looked up dynamically rather than hard-coded. `instrumentTag` is the value stored in
+     * `ohlcv_candles.instrument` (e.g. "NIFTY_FUT"), independent of the actual broker key used.
+     */
+    @Transactional
+    public int ingestCandlesForKey(String instrumentTag, String instrumentKey, String unit, int interval,
+                                    LocalDate from, LocalDate to) {
+        List<Candle> candles = brokerClient.getCandles(instrumentKey, unit, interval, from, to);
+        return saveNewCandles(instrumentTag, unit, interval, candles);
+    }
+
+    /** Same as {@link #ingestIntradayCandles} but for an instrument outside the fixed enum — see {@link #ingestCandlesForKey}. */
+    @Transactional
+    public int ingestIntradayCandlesForKey(String instrumentTag, String instrumentKey, String unit, int interval) {
+        List<Candle> candles = brokerClient.getIntradayCandles(instrumentKey, unit, interval);
+        return saveNewCandles(instrumentTag, unit, interval, candles);
+    }
+
+    private int saveNewCandles(String instrumentTag, String unit, int interval, List<Candle> candles) {
         String intervalLabel = intervalLabel(unit, interval);
         int saved = 0;
         for (Candle candle : candles) {
-            if (candleRepository.existsByInstrumentAndIntervalAndTs(instrument.name(), intervalLabel, candle.ts())) {
+            if (candleRepository.existsByInstrumentAndIntervalAndTs(instrumentTag, intervalLabel, candle.ts())) {
                 continue;
             }
             candleRepository.save(OhlcvCandle.builder()
-                    .instrument(instrument.name())
+                    .instrument(instrumentTag)
                     .interval(intervalLabel)
                     .ts(candle.ts())
                     .open(candle.open())
@@ -68,7 +88,7 @@ public class IngestionService {
                     .build());
             saved++;
         }
-        log.info("Ingested {} new {} candles for {}", saved, intervalLabel, instrument);
+        log.info("Ingested {} new {} candles for {}", saved, intervalLabel, instrumentTag);
         return saved;
     }
 

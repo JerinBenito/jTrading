@@ -34,9 +34,14 @@ public class IngestionJob implements Job {
     private OutcomeEvaluationService outcomeEvaluationService;
     private ForecastPredictionService forecastPredictionService;
     private DailyForecastPredictionService dailyForecastPredictionService;
+    private FuturesIngestionService futuresIngestionService;
 
     public void setIngestionService(IngestionService ingestionService) {
         this.ingestionService = ingestionService;
+    }
+
+    public void setFuturesIngestionService(FuturesIngestionService futuresIngestionService) {
+        this.futuresIngestionService = futuresIngestionService;
     }
 
     public void setSignalService(SignalService signalService) {
@@ -85,6 +90,15 @@ public class IngestionJob implements Job {
                 dailyForecastPredictionService.recordTodayPrediction(instrument);
             } catch (Exception e) {
                 log.error("Hourly cycle failed for {}", instrument, e);
+            }
+
+            // Separate try/catch, deliberately isolated from the core pipeline above — futures
+            // ingestion is auxiliary (feeds volume-confirmation analysis only), so a failure
+            // here (e.g. a contract rollover edge case) must never affect live signals/forecasts.
+            try {
+                futuresIngestionService.ingestTodayNearMonth(instrument.name(), instrument.name() + "_FUT", "hours", 1);
+            } catch (Exception e) {
+                log.error("Futures ingestion failed for {}", instrument, e);
             }
         }
     }

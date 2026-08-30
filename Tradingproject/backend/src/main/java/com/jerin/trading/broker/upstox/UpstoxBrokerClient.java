@@ -2,8 +2,10 @@ package com.jerin.trading.broker.upstox;
 
 import com.jerin.trading.broker.BrokerClient;
 import com.jerin.trading.broker.Candle;
+import com.jerin.trading.broker.FuturesContract;
 import com.jerin.trading.broker.OptionChainEntry;
 import com.jerin.trading.broker.upstox.dto.UpstoxCandleResponse;
+import com.jerin.trading.broker.upstox.dto.UpstoxInstrumentSearchResponse;
 import com.jerin.trading.broker.upstox.dto.UpstoxOptionChainResponse;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -12,8 +14,10 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 @Component
 public class UpstoxBrokerClient implements BrokerClient {
@@ -106,5 +110,54 @@ public class UpstoxBrokerClient implements BrokerClient {
                 - Objects.requireNonNullElse(market.prevOi(), 0L);
         BigDecimal iv = leg.optionGreeks() != null ? leg.optionGreeks().iv() : null;
         return new OptionChainEntry.OptionLeg(market.oi(), changeOi, iv, market.ltp(), market.volume());
+    }
+
+    @Override
+    public Optional<FuturesContract> findNearMonthFuture(String underlyingSymbol) {
+        UpstoxInstrumentSearchResponse response = restClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/v2/instruments/search")
+                        .queryParam("query", underlyingSymbol)
+                        .queryParam("segments", "FO")
+                        .queryParam("instrument_types", "FUT")
+                        .build())
+                .retrieve()
+                .body(UpstoxInstrumentSearchResponse.class);
+
+        if (response == null || response.data() == null) {
+            return Optional.empty();
+        }
+
+        LocalDate today = LocalDate.now();
+        return response.data().stream()
+                .filter(row -> "FUT".equals(row.instrumentType()))
+                .filter(row -> underlyingSymbol.equalsIgnoreCase(row.underlyingSymbol()))
+                .filter(row -> row.expiry() != null && !LocalDate.parse(row.expiry()).isBefore(today))
+                .min(Comparator.comparing(row -> LocalDate.parse(row.expiry())))
+                .map(row -> new FuturesContract(row.instrumentKey(), row.tradingSymbol(), LocalDate.parse(row.expiry())));
+    }
+
+    @Override
+    public Optional<String> findEquityInstrumentKey(String tradingSymbol) {
+        UpstoxInstrumentSearchResponse response = restClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/v2/instruments/search")
+                        .queryParam("query", tradingSymbol)
+                        .queryParam("segments", "EQ")
+                        .queryParam("instrument_types", "EQ")
+                        .queryParam("exchanges", "NSE")
+                        .build())
+                .retrieve()
+                .body(UpstoxInstrumentSearchResponse.class);
+
+        if (response == null || response.data() == null) {
+            return Optional.empty();
+        }
+
+        return response.data().stream()
+                .filter(row -> "EQ".equals(row.instrumentType()))
+                .filter(row -> tradingSymbol.equalsIgnoreCase(row.tradingSymbol()))
+                .findFirst()
+                .map(UpstoxInstrumentSearchResponse.Row::instrumentKey);
     }
 }
