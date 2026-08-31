@@ -6,6 +6,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Optional;
 
 /** Read-only export of raw intraday feature+outcome rows for offline model training/evaluation. See {@link IntradayFeatureExportService}. */
 @RestController
@@ -27,5 +28,11 @@ public class IntradayFeatureExportController {
     @GetMapping("/all")
     public List<IntradayFeatureRow> exportAll() {
         return exportService.exportAll();
+    }
+
+    /** Today's current (in-progress) feature state, for live inference — not backtesting. */
+    @GetMapping("/{instrument}/live")
+    public Optional<LiveFeatureSnapshot> live(@PathVariable String instrument) {
+        return exportService.liveFeatures(instrument);
     }
 }

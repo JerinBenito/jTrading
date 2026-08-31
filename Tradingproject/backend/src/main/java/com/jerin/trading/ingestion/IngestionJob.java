@@ -2,6 +2,7 @@ package com.jerin.trading.ingestion;
 
 import com.jerin.trading.forecast.DailyForecastPredictionService;
 import com.jerin.trading.forecast.ForecastPredictionService;
+import com.jerin.trading.ml.AiPredictionService;
 import com.jerin.trading.signal.OutcomeEvaluationService;
 import com.jerin.trading.signal.SignalResponse;
 import com.jerin.trading.signal.SignalService;
@@ -36,6 +37,7 @@ public class IngestionJob implements Job {
     private DailyForecastPredictionService dailyForecastPredictionService;
     private FuturesIngestionService futuresIngestionService;
     private EquityBasketIngestionService equityBasketIngestionService;
+    private AiPredictionService aiPredictionService;
 
     public void setIngestionService(IngestionService ingestionService) {
         this.ingestionService = ingestionService;
@@ -47,6 +49,10 @@ public class IngestionJob implements Job {
 
     public void setEquityBasketIngestionService(EquityBasketIngestionService equityBasketIngestionService) {
         this.equityBasketIngestionService = equityBasketIngestionService;
+    }
+
+    public void setAiPredictionService(AiPredictionService aiPredictionService) {
+        this.aiPredictionService = aiPredictionService;
     }
 
     public void setSignalService(SignalService signalService) {
@@ -131,6 +137,18 @@ public class IngestionJob implements Job {
             }
         } catch (Exception e) {
             log.error("Equity basket live ingestion failed", e);
+        }
+
+        // Evaluates whatever AI predictions (any instrument/horizon) are now knowable — pure
+        // read/compare against already-ingested candle data, no model inference happens here.
+        // Isolated for the same reason as everything else in this job: never affect the rest.
+        try {
+            int aiEvaluated = aiPredictionService.evaluatePending();
+            if (aiEvaluated > 0) {
+                log.info("{} AI prediction(s) evaluated", aiEvaluated);
+            }
+        } catch (Exception e) {
+            log.error("AI prediction evaluation failed", e);
         }
     }
 }

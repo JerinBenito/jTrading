@@ -14,6 +14,7 @@ import java.math.BigDecimal;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Stream;
 
 /**
@@ -126,6 +127,82 @@ public class IntradayFeatureExportService {
             globalIndex += today.size();
         }
         return rows;
+    }
+
+    /** Today's current feature state (as of the most recent ingested candle) — for live inference,
+     * not backtesting. Unlike {@link #export}, doesn't require the day to be over. */
+    public Optional<LiveFeatureSnapshot> liveFeatures(String instrumentTag) {
+        List<OhlcvCandle> hourly = candleRepository.findByInstrumentAndIntervalOrderByTsAsc(instrumentTag, SOURCE_INTERVAL);
+        List<BigDecimal> closes = hourly.stream().map(OhlcvCandle::getClose).toList();
+        List<BigDecimal> rsi14 = RsiCalculator.calculate(closes, RSI_PERIOD);
+        List<BigDecimal> ema9 = EmaCalculator.calculate(closes, EMA_SHORT_PERIOD);
+        List<BigDecimal> ema21 = EmaCalculator.calculate(closes, EMA_LONG_PERIOD);
+
+        List<List<OhlcvCandle>> days = DailyBarAggregator.groupByDay(hourly);
+        List<OhlcvCandle> dailyBars = DailyBarAggregator.aggregate(hourly);
+
+        if (days.isEmpty()) {
+            return Optional.empty();
+        }
+        int i = days.size() - 1;
+        List<OhlcvCandle> today = days.get(i);
+        int h = today.size() - 1;
+        int idx = hourly.size() - 1;
+
+        BigDecimal rsiVal = rsi14.get(idx);
+        BigDecimal ema9Val = ema9.get(idx);
+        BigDecimal ema21Val = ema21.get(idx);
+        if (rsiVal == null || ema9Val == null || ema21Val == null) {
+            return Optional.empty();
+        }
+
+        double dayOpen = today.get(0).getOpen().doubleValue();
+        OhlcvCandle candle = today.get(h);
+        double currentPrice = candle.getClose().doubleValue();
+        double runningHigh = Double.NEGATIVE_INFINITY;
+        double runningLow = Double.POSITIVE_INFINITY;
+        long volumeSoFar = 0;
+        boolean volumeKnown = true;
+        for (OhlcvCandle c : today) {
+            runningHigh = Math.max(runningHigh, c.getHigh().doubleValue());
+            runningLow = Math.min(runningLow, c.getLow().doubleValue());
+            if (c.getVolume() != null) {
+                volumeSoFar += c.getVolume();
+            } else {
+                volumeKnown = false;
+            }
+        }
+        Double trailingAvgDailyVolume = trailingAvgVolume(dailyBars, i);
+        Double volumeSoFarRatio = (volumeKnown && trailingAvgDailyVolume != null && trailingAvgDailyVolume > 0)
+                ? volumeSoFar / trailingAvgDailyVolume
+                : null;
+
+        double returnSoFarPct = (currentPrice - dayOpen) / dayOpen * 100;
+        double volatilitySoFarPct = (runningHigh - runningLow) / dayOpen * 100;
+        double emaSpreadPct = ema9Val.subtract(ema21Val).doubleValue() / currentPrice * 100;
+
+        double open = candle.getOpen().doubleValue();
+        double high = candle.getHigh().doubleValue();
+        double low = candle.getLow().doubleValue();
+        double range = high - low;
+        double bodyPct = range > 1e-9 ? (currentPrice - open) / range * 100 : 0.0;
+        double upperWickPct = range > 1e-9 ? (high - Math.max(open, currentPrice)) / range * 100 : 0.0;
+        double lowerWickPct = range > 1e-9 ? (Math.min(open, currentPrice) - low) / range * 100 : 0.0;
+
+        int windowStart = Math.max(0, h - 2);
+        int upCount = 0;
+        for (int j = windowStart; j <= h; j++) {
+            OhlcvCandle c = today.get(j);
+            if (c.getClose().compareTo(c.getOpen()) > 0) {
+                upCount++;
+            }
+        }
+
+        String tradingDate = today.get(0).getTs().atZoneSameInstant(IST).toLocalDate().toString();
+        return Optional.of(new LiveFeatureSnapshot(
+                instrumentTag, tradingDate, h,
+                returnSoFarPct, volatilitySoFarPct, rsiVal.doubleValue(), emaSpreadPct,
+                bodyPct, upperWickPct, lowerWickPct, upCount, volumeSoFarRatio, currentPrice));
     }
 
     /** Average total daily volume over the {@value #VOLUME_LOOKBACK_DAYS} trading days strictly

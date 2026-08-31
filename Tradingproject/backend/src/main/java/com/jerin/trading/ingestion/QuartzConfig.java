@@ -2,6 +2,7 @@ package com.jerin.trading.ingestion;
 
 import com.jerin.trading.forecast.DailyForecastPredictionService;
 import com.jerin.trading.forecast.ForecastPredictionService;
+import com.jerin.trading.ml.AiPredictionService;
 import com.jerin.trading.signal.OutcomeEvaluationService;
 import com.jerin.trading.signal.SignalService;
 import org.quartz.*;
@@ -19,7 +20,8 @@ public class QuartzConfig {
                                          ForecastPredictionService forecastPredictionService,
                                          DailyForecastPredictionService dailyForecastPredictionService,
                                          FuturesIngestionService futuresIngestionService,
-                                         EquityBasketIngestionService equityBasketIngestionService) {
+                                         EquityBasketIngestionService equityBasketIngestionService,
+                                         AiPredictionService aiPredictionService) {
         JobDataMap jobDataMap = new JobDataMap();
         jobDataMap.put("ingestionService", ingestionService);
         jobDataMap.put("signalService", signalService);
@@ -28,6 +30,7 @@ public class QuartzConfig {
         jobDataMap.put("dailyForecastPredictionService", dailyForecastPredictionService);
         jobDataMap.put("futuresIngestionService", futuresIngestionService);
         jobDataMap.put("equityBasketIngestionService", equityBasketIngestionService);
+        jobDataMap.put("aiPredictionService", aiPredictionService);
         return JobBuilder.newJob(IngestionJob.class)
                 .withIdentity("ingestionJob")
                 .usingJobData(jobDataMap)
