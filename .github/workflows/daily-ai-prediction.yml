@@ -1,0 +1,35 @@
+name: Daily AI Prediction
+
+# Runs the AI prediction ledger script (Tradingproject/ml-training/run_daily_ai_prediction.py)
+# on GitHub's own runners — deliberately NOT dependent on any local machine being on. Talks only
+# to the public backend API (jerintradingsignal.duckdns.org) over HTTPS; no secrets needed.
+on:
+  schedule:
+    # 10:05 IST = 04:35 UTC, weekdays only — shortly after the backend's first hourly market-data
+    # cycle of the day (market opens 9:15 IST), so there's real intraday data to predict from.
+    - cron: "35 4 * * 1-5"
+  workflow_dispatch: {} # manual "Run workflow" button for on-demand testing
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Tradingproject/ml-training
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # This repo root also holds large, unrelated projects (Services/, FrontEnd/, etc.) —
+          # sparse checkout keeps this workflow from trying to pull all of that down.
+          sparse-checkout: |
+            Tradingproject/ml-training
+          sparse-checkout-cone-mode: true
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - run: python run_daily_ai_prediction.py
