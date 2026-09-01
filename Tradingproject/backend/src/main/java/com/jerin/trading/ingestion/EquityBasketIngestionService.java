@@ -39,6 +39,12 @@ public class EquityBasketIngestionService {
         this.ingestionService = ingestionService;
     }
 
+    /** Public wrapper for consumers outside this service (e.g. the live feed relay) that need a
+     * basket stock's actual Upstox instrument_key, not just its own trading-symbol tag. */
+    public Optional<String> findInstrumentKey(String symbol) {
+        return resolveInstrumentKey(symbol);
+    }
+
     private Optional<String> resolveInstrumentKey(String symbol) {
         String cached = instrumentKeyCache.get(symbol);
         if (cached != null) {
