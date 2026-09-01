@@ -117,3 +117,27 @@ export interface BasketSnapshot {
   /** How far today's price has moved from the morning's predicted close, as a %. Null with no prediction yet. */
   deviationFromPredictionPct: number | null;
 }
+
+/** One model's prediction for a given day, normalized so DETERMINISTIC and AI rows render in the
+ * same table. rangeLow/rangeHigh only apply to DETERMINISTIC; baselinePrice/betterThanBaseline/
+ * directionCorrect only apply to AI. */
+export interface PredictionComparisonRow {
+  source: 'DETERMINISTIC' | 'AI';
+  label: string;
+  modelName: string;
+  targetDate: string;
+  predictedPrice: number | null;
+  rangeLow: number | null;
+  rangeHigh: number | null;
+  baselinePrice: number | null;
+  actualPrice: number | null;
+  evaluated: boolean;
+  betterThanBaseline: boolean | null;
+  directionCorrect: boolean | null;
+}
+
+export interface PredictionComparisonResponse {
+  instrument: string;
+  date: string;
+  rows: PredictionComparisonRow[];
+}

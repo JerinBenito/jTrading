@@ -1,9 +1,10 @@
 import { useCallback, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../../src/constants/colors';
 import { useInstrument } from '../../src/context/InstrumentContext';
 import { useApiData } from '../../src/hooks/useApiData';
+import { useLiveFeed } from '../../src/hooks/useLiveFeed';
 import { api } from '../../src/api/client';
 import { ScreenHeader } from '../../src/components/ScreenHeader';
 import { InstrumentToggle } from '../../src/components/InstrumentToggle';
@@ -11,6 +12,7 @@ import { HealthBadge } from '../../src/components/HealthBadge';
 import { PredictionCard } from '../../src/components/PredictionCard';
 import { TrajectoryChart } from '../../src/components/TrajectoryChart';
 import { RangeCalibrationRow } from '../../src/components/RangeCalibrationRow';
+import { PredictionComparisonTable } from '../../src/components/PredictionComparisonTable';
 import { EmptyState, ErrorState, LoadingState } from '../../src/components/ScreenState';
 
 export default function DashboardScreen() {
@@ -22,6 +24,8 @@ export default function DashboardScreen() {
   const trajectory = useApiData(() => api.getTrajectory(instrument), [instrument]);
   const rangeHourly = useApiData(() => api.getRangeCalibration(instrument, '1h'), [instrument]);
   const rangeDaily = useApiData(() => api.getRangeCalibration(instrument, '1d'), [instrument]);
+  const comparison = useApiData(() => api.getPredictionComparison(instrument), [instrument]);
+  const live = useLiveFeed(instrument);
 
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const onRefresh = useCallback(() => {
@@ -31,6 +35,7 @@ export default function DashboardScreen() {
     trajectory.refresh();
     rangeHourly.refresh();
     rangeDaily.refresh();
+    comparison.refresh();
     setTimeout(() => setManualRefreshing(false), 600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [instrument]);
@@ -39,6 +44,7 @@ export default function DashboardScreen() {
   const latestHourly = hourly.data?.[0] ?? null;
   const loading = daily.loading && hourly.loading;
   const firstError = daily.error ?? hourly.error;
+  const aiIntradayRow = comparison.data?.rows.find((r) => r.source === 'AI' && r.label === 'AI same-day close');
 
   return (
     <ScrollView
@@ -67,7 +73,17 @@ export default function DashboardScreen() {
             <EmptyState message="No same-day prediction recorded yet today." />
           )}
 
-          {trajectory.data && <TrajectoryChart trajectory={trajectory.data} />}
+          {trajectory.data && (
+            <>
+              <TrajectoryChart
+                trajectory={trajectory.data}
+                aiPredictedClose={aiIntradayRow?.predictedPrice}
+                liveLtp={live.ltp}
+                liveConnected={live.connected}
+              />
+              {live.error && <Text style={styles.liveErrorText}>Live feed: {live.error}</Text>}
+            </>
+          )}
 
           {latestHourly ? (
             <PredictionCard
@@ -80,6 +96,8 @@ export default function DashboardScreen() {
           )}
 
           <RangeCalibrationRow hourly={rangeHourly.data} daily={rangeDaily.data} />
+
+          <PredictionComparisonTable rows={comparison.data?.rows ?? []} />
         </>
       )}
     </ScrollView>
@@ -95,5 +113,10 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 32,
     gap: 14,
+  },
+  liveErrorText: {
+    color: colors.textMuted,
+    fontSize: 11,
+    marginTop: -6,
   },
 });

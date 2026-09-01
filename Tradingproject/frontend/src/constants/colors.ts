@@ -10,4 +10,7 @@ export const colors = {
   down: '#F2545B',
   neutral: '#F2B84B',
   accent: '#5B8CFF',
+  /** Distinct from `accent` (the deterministic model's color) so AI-related UI is visually
+   * identifiable at a glance across the app. */
+  ai: '#B57BFF',
 };

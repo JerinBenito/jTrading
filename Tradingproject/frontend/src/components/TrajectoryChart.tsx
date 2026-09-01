@@ -36,7 +36,21 @@ function formatHour(iso: string) {
   });
 }
 
-export function TrajectoryChart({ trajectory }: { trajectory: DailyTrajectory }) {
+export function TrajectoryChart({
+  trajectory,
+  aiPredictedClose,
+  liveLtp,
+  liveConnected,
+}: {
+  trajectory: DailyTrajectory;
+  /** The AI model's predicted close for this same day, if one exists — drawn as a second
+   * reference line so it's visually comparable against the deterministic model's line. */
+  aiPredictedClose?: number | null;
+  /** Raw tick from the real Upstox WebSocket feed (useLiveFeed) — distinct from
+   * currentEstimatedClose, which is the deterministic model's own re-anchored estimate. */
+  liveLtp?: number | null;
+  liveConnected?: boolean;
+}) {
   const {
     points,
     predictedClose,
@@ -57,6 +71,7 @@ export function TrajectoryChart({ trajectory }: { trajectory: DailyTrajectory })
   }
 
   const hasLiveEstimate = currentEstimatedClose !== null;
+  const hasAiPrediction = aiPredictedClose !== null && aiPredictedClose !== undefined;
 
   const plotWidth = CHART_WIDTH - PADDING_X * 2;
   const plotHeight = CHART_HEIGHT - PADDING_TOP - PADDING_BOTTOM;
@@ -67,6 +82,7 @@ export function TrajectoryChart({ trajectory }: { trajectory: DailyTrajectory })
     predictedClose,
     ...points.map((p) => p.actualClose),
     ...(hasLiveEstimate ? [currentEstimatedRangeLow!, currentEstimatedRangeHigh!] : []),
+    ...(hasAiPrediction ? [aiPredictedClose!] : []),
   ];
   const min = Math.min(...allValues);
   const max = Math.max(...allValues);
@@ -93,11 +109,21 @@ export function TrajectoryChart({ trajectory }: { trajectory: DailyTrajectory })
     <View style={styles.card}>
       <View style={styles.headerRow}>
         <Text style={styles.title}>Today's trajectory</Text>
-        <View style={styles.deviationPill}>
-          <Text style={[styles.deviationText, { color: lineColor }]}>
-            {lastPoint.deviationPct >= 0 ? '+' : ''}
-            {lastPoint.deviationPct.toFixed(2)}%
-          </Text>
+        <View style={styles.headerRightRow}>
+          {liveConnected && (
+            <View style={styles.liveTickPill}>
+              <View style={styles.liveTickDot} />
+              <Text style={styles.liveTickText}>
+                {liveLtp !== null && liveLtp !== undefined ? formatPrice(liveLtp) : 'live'}
+              </Text>
+            </View>
+          )}
+          <View style={styles.deviationPill}>
+            <Text style={[styles.deviationText, { color: lineColor }]}>
+              {lastPoint.deviationPct >= 0 ? '+' : ''}
+              {lastPoint.deviationPct.toFixed(2)}%
+            </Text>
+          </View>
         </View>
       </View>
 
@@ -172,6 +198,18 @@ export function TrajectoryChart({ trajectory }: { trajectory: DailyTrajectory })
           strokeDasharray="5,4"
         />
 
+        {hasAiPrediction && (
+          <Line
+            x1={PADDING_X}
+            y1={yFor(aiPredictedClose!)}
+            x2={CHART_WIDTH - PADDING_X}
+            y2={yFor(aiPredictedClose!)}
+            stroke={colors.ai}
+            strokeWidth={1.25}
+            strokeDasharray="2,3"
+          />
+        )}
+
         <Path d={areaPathD(linePoints, CHART_HEIGHT - PADDING_BOTTOM)} fill={`url(#${gradientId})`} />
         <Path d={smoothPathD(linePoints)} fill="none" stroke={lineColor} strokeWidth={2.75} strokeLinecap="round" />
 
@@ -212,6 +250,18 @@ export function TrajectoryChart({ trajectory }: { trajectory: DailyTrajectory })
           predicted {formatPrice(predictedClose, true)}
         </SvgText>
 
+        {hasAiPrediction && (
+          <SvgText
+            x={CHART_WIDTH - PADDING_X}
+            y={yFor(aiPredictedClose!) - 6}
+            fill={colors.ai}
+            fontSize={10}
+            textAnchor="end"
+          >
+            AI {formatPrice(aiPredictedClose!, true)}
+          </SvgText>
+        )}
+
         <SvgText x={xFor(0)} y={CHART_HEIGHT - 8} fill={colors.textMuted} fontSize={10} textAnchor="start">
           {formatHour(points[0].ts)}
         </SvgText>
@@ -231,6 +281,7 @@ export function TrajectoryChart({ trajectory }: { trajectory: DailyTrajectory })
         <LegendItem dashed label="Morning prediction" />
         <LegendItem boxSwatch={colors.surfaceAlt} label="Morning range" />
         {hasLiveEstimate && <LegendItem boxSwatch={colors.accent} label="Live range" />}
+        {hasAiPrediction && <LegendItem dashed dashColor={colors.ai} label="AI prediction" />}
       </View>
     </View>
   );
@@ -240,18 +291,20 @@ function LegendItem({
   colorSwatch,
   boxSwatch,
   dashed,
+  dashColor,
   label,
 }: {
   colorSwatch?: string;
   boxSwatch?: string;
   dashed?: boolean;
+  dashColor?: string;
   label: string;
 }) {
   return (
     <View style={styles.legendItem}>
       {colorSwatch && <View style={[styles.legendDot, { backgroundColor: colorSwatch }]} />}
       {boxSwatch && <View style={[styles.legendBox, { backgroundColor: boxSwatch, opacity: boxSwatch === colors.accent ? 0.5 : 1 }]} />}
-      {dashed && <View style={styles.legendDash} />}
+      {dashed && <View style={[styles.legendDash, dashColor ? { borderColor: dashColor } : null]} />}
       <Text style={styles.legendLabel}>{label}</Text>
     </View>
   );
@@ -282,6 +335,31 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.6,
+  },
+  headerRightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  liveTickPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(62, 207, 142, 0.14)',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  liveTickDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.up,
+  },
+  liveTickText: {
+    color: colors.up,
+    fontSize: 11,
+    fontWeight: '700',
   },
   deviationPill: {
     backgroundColor: colors.surfaceAlt,

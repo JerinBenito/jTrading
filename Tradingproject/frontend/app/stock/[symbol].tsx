@@ -5,10 +5,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../../src/constants/colors';
 import { useApiData } from '../../src/hooks/useApiData';
+import { useLiveFeed } from '../../src/hooks/useLiveFeed';
 import { api } from '../../src/api/client';
 import { TrajectoryChart } from '../../src/components/TrajectoryChart';
 import { BacktestResultTable } from '../../src/components/BacktestResultTable';
 import { IntradayReanchorTable } from '../../src/components/IntradayReanchorTable';
+import { PredictionComparisonTable } from '../../src/components/PredictionComparisonTable';
 import { EmptyState, ErrorState, LoadingState } from '../../src/components/ScreenState';
 
 function formatPrice(value: number) {
@@ -23,6 +25,8 @@ export default function StockDetailScreen() {
   const dailyBias = useApiData(() => api.getDailyBiasCorrectionBacktest(symbol), [symbol]);
   const dailyRange = useApiData(() => api.getDailyRangeCalibrationBacktest(symbol), [symbol]);
   const reanchor = useApiData(() => api.getIntradayReanchorBacktest(symbol), [symbol]);
+  const comparison = useApiData(() => api.getPredictionComparison(symbol), [symbol]);
+  const live = useLiveFeed(symbol);
 
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const onRefresh = useCallback(() => {
@@ -32,11 +36,13 @@ export default function StockDetailScreen() {
     dailyBias.refresh();
     dailyRange.refresh();
     reanchor.refresh();
+    comparison.refresh();
     setTimeout(() => setManualRefreshing(false), 600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const data = trajectory.data;
+  const aiIntradayRow = comparison.data?.rows.find((r) => r.source === 'AI' && r.label === 'AI same-day close');
 
   return (
     <ScrollView
@@ -89,7 +95,13 @@ export default function StockDetailScreen() {
             </View>
           )}
 
-          <TrajectoryChart trajectory={data} />
+          <TrajectoryChart
+            trajectory={data}
+            aiPredictedClose={aiIntradayRow?.predictedPrice}
+            liveLtp={live.ltp}
+            liveConnected={live.connected}
+          />
+          {live.error && <Text style={styles.liveErrorText}>Live feed: {live.error}</Text>}
 
           <Text style={styles.footnote}>
             Same model already validated on NIFTY/BANKNIFTY: random-walk baseline + gated bias
@@ -98,6 +110,8 @@ export default function StockDetailScreen() {
           </Text>
         </>
       )}
+
+      <PredictionComparisonTable rows={comparison.data?.rows ?? []} />
 
       <Text style={styles.sectionLabel}>Analysis — walk-forward, recomputed from {symbol}'s own history</Text>
       {reanchor.data && <IntradayReanchorTable result={reanchor.data} />}
@@ -211,6 +225,11 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 11,
     lineHeight: 16,
+  },
+  liveErrorText: {
+    color: colors.textMuted,
+    fontSize: 11,
+    marginTop: -6,
   },
   sectionLabel: {
     color: colors.textSecondary,

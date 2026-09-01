@@ -6,6 +6,7 @@ import type {
   HealthStatus,
   IntradayReanchorBacktestResult,
   Prediction,
+  PredictionComparisonResponse,
   RangeCalibrationBacktestResult,
   RangeCalibrationStatus,
   SignalHistoryEntry,
@@ -72,4 +73,8 @@ export const api = {
 
   // Phase D — live monitoring across NIFTY, BANKNIFTY, and the NIFTY 50 basket. No signals/confidence, just current state.
   getBasketSnapshot: () => getJson<BasketSnapshot[]>('/api/monitor/basket'),
+
+  /** Every model's prediction for one instrument+day (deterministic + all AI horizons), normalized into one list. */
+  getPredictionComparison: (instrument: string, date?: string) =>
+    getJson<PredictionComparisonResponse>(`/api/predictions-comparison/${instrument}${date ? `?date=${date}` : ''}`),
 };
