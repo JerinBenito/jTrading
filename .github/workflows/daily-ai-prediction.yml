@@ -5,9 +5,13 @@ name: Daily AI Prediction
 # to the public backend API (jerintradingsignal.duckdns.org) over HTTPS; no secrets needed.
 on:
   schedule:
-    # 10:05 IST = 04:35 UTC, weekdays only — shortly after the backend's first hourly market-data
-    # cycle of the day (market opens 9:15 IST), so there's real intraday data to predict from.
-    - cron: "35 4 * * 1-5"
+    # GitHub's scheduled runs are best-effort, not guaranteed-on-time — a single 10:05 IST slot
+    # was observed running ~5 hours late (near market close, useless for an intraday prediction).
+    # Firing every 10 min across 08:30-10:29 IST instead (03:00-04:59 UTC), weekdays only, so at
+    # least one attempt is likely to land soon after market open (9:15 IST). The script itself is
+    # idempotent (see already_ran_today() in run_daily_ai_prediction.py) — every firing after the
+    # first successful one each day is a cheap no-op, not a duplicate/overwrite.
+    - cron: "*/10 3,4 * * 1-5"
   workflow_dispatch: {} # manual "Run workflow" button for on-demand testing
 
 jobs:

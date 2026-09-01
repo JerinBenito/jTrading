@@ -55,6 +55,18 @@ def get_symbols():
     return [row["symbol"] for row in basket]
 
 
+def already_ran_today():
+    """GitHub Actions scheduled runs are best-effort, not guaranteed-on-time - the workflow fires
+    several times in a morning window as a safety net against delay. This makes a redundant later
+    firing a cheap no-op instead of overwriting an earlier, more meaningful intraday prediction
+    with one made near market close."""
+    live = get_json("/api/ml/intraday-features/NIFTY/live")
+    if live is None:
+        return False
+    existing = get_json("/api/ai-predictions/NIFTY?horizon=INTRADAY")
+    return bool(existing) and existing[0]["targetDate"] == live["tradingDate"]
+
+
 def train_intraday_model():
     print("Training intraday model on full history...")
     rows = get_json("/api/ml/intraday-features/all")
@@ -68,11 +80,20 @@ def train_intraday_model():
 
 def run_intraday_predictions(model, symbols):
     print("\nGenerating live intraday predictions...")
-    submitted = 0
+    submitted, skipped = 0, 0
     for sym in symbols:
         live = get_json(f"/api/ml/intraday-features/{urllib.parse.quote(sym)}/live")
         if live is None:
             continue
+
+        # Per-symbol safety net matching already_ran_today()'s NIFTY-based check - if this
+        # specific symbol already has today's prediction (e.g. a partial earlier run), don't
+        # clobber it with a later, less meaningful one.
+        existing = get_json(f"/api/ai-predictions/{urllib.parse.quote(sym)}?horizon=INTRADAY")
+        if existing and existing[0]["targetDate"] == live["tradingDate"]:
+            skipped += 1
+            continue
+
         row = pd.DataFrame([live])[INTRADAY_FEATURES].apply(pd.to_numeric, errors="coerce")
         predicted_drift = model.predict(row)[0]
         current_price = live["currentPrice"]
@@ -88,7 +109,7 @@ def run_intraday_predictions(model, symbols):
             "targetDate": live["tradingDate"],
         })
         submitted += 1
-    print(f"  submitted {submitted} intraday predictions")
+    print(f"  submitted {submitted} intraday predictions, skipped {skipped} (already had today's)")
 
 
 def train_multiday_models_per_symbol(symbols):
@@ -148,6 +169,13 @@ if __name__ == "__main__":
     print(f"=== AI prediction run: {date.today().isoformat()} ===")
     print("NOTE: offline validation found no edge over baseline for this model. This run starts")
     print("the live, honest track record it will be judged on - not a claim it works.\n")
+
+    if already_ran_today():
+        print("NIFTY already has today's INTRADAY prediction - this is a redundant safety-net "
+              "firing (GitHub's scheduled runs are best-effort, not guaranteed-on-time). Skipping "
+              "the expensive training/prediction steps entirely rather than risk overwriting an "
+              "earlier, more meaningful prediction with a late one.")
+        raise SystemExit(0)
 
     symbols = get_symbols()
     print(f"{len(symbols)} instruments: {','.join(symbols)}")
