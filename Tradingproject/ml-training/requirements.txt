@@ -2,6 +2,7 @@ numpy
 pandas
 scikit-learn
 lightgbm
+joblib
 statsmodels
 arch
 hmmlearn

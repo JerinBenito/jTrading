@@ -62,6 +62,19 @@ public class AiPrediction {
     @Column(name = "actual_value", precision = 14, scale = 4)
     private BigDecimal actualValue;
 
+    /** Real rupee price regardless of {@link #valueType} — for INTRADAY this equals
+     * predicted/baseline/actual_value directly (already a price); for FORWARD_* it's the %
+     * return converted using the price the prediction was anchored from, so a consumer never
+     * has to branch on valueType to get an actual price. */
+    @Column(name = "predicted_price", precision = 14, scale = 4)
+    private BigDecimal predictedPrice;
+
+    @Column(name = "baseline_price", precision = 14, scale = 4)
+    private BigDecimal baselinePrice;
+
+    @Column(name = "actual_price", precision = 14, scale = 4)
+    private BigDecimal actualPrice;
+
     @Column(name = "evaluated_at")
     private OffsetDateTime evaluatedAt;
 

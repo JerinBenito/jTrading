@@ -2,6 +2,11 @@
 # Never commit these; re-run the downloader instead of relying on a stale local copy.
 data/
 
+# Trained model artifacts (run_daily_ai_prediction.py) - not committed to git (would grow
+# unbounded, one set per trading day). On GitHub Actions these get uploaded as a build artifact
+# instead (see .github/workflows/daily-ai-prediction.yml); locally they're just regenerable.
+models/
+
 # Local virtual environment - recreate with: python -m venv venv && venv/Scripts/pip install -r requirements.txt
 venv/
 __pycache__/

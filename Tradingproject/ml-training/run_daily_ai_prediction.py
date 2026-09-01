@@ -18,11 +18,15 @@ import urllib.parse
 import urllib.request
 from datetime import date
 
+import joblib
 import pandas as pd
 from lightgbm import LGBMRegressor
 
 API_BASE = "https://jerintradingsignal.duckdns.org"
-MODEL_VERSION = "lgbm-v1"
+# Traceable to the exact GitHub Actions run that trained it (and whose artifact upload holds the
+# actual model file) when running there; "local" when run by hand. See save_models() / item #6.
+MODEL_VERSION = f"lgbm-v1-run{os.environ.get('GITHUB_RUN_ID', 'local')}"
+MODELS_DIR = os.path.join(os.path.dirname(__file__), "models", date.today().isoformat())
 INTRADAY_FEATURES = [
     "hoursSinceOpen", "returnSoFarPct", "volatilitySoFarPct", "rsi14", "emaSpreadPct",
     "bodyPct", "upperWickPct", "lowerWickPct", "last3UpCount", "volumeSoFarRatio",
@@ -67,6 +71,18 @@ def already_ran_today():
     return bool(existing) and existing[0]["targetDate"] == live["tradingDate"]
 
 
+def save_model(model, name):
+    """Persists the trained model to a real file — see item #6: previously every model was
+    retrained from scratch and discarded each run, with no reproducible artifact tied to a
+    day's predictions. Saved under models/<date>/ and, on GitHub Actions, uploaded as a build
+    artifact by the workflow (ephemeral runner disk otherwise loses it when the job ends)."""
+    os.makedirs(MODELS_DIR, exist_ok=True)
+    path = os.path.join(MODELS_DIR, f"{name}.joblib")
+    joblib.dump(model, path)
+    print(f"  saved model -> {path}")
+    return path
+
+
 def train_intraday_model():
     print("Training intraday model on full history...")
     rows = get_json("/api/ml/intraday-features/all")
@@ -75,6 +91,7 @@ def train_intraday_model():
                            subsample=0.8, colsample_bytree=0.8, random_state=42, verbosity=-1)
     model.fit(df[INTRADAY_FEATURES], df["remainingDriftPct"])
     print(f"  trained on {len(df)} rows")
+    save_model(model, "intraday")
     return model
 
 
@@ -132,6 +149,7 @@ def train_multiday_models_per_symbol(symbols):
         models[h] = model
         baselines[h] = sub[target].mean()
         print(f"  {h}d model trained on {len(sub)} rows, baseline (mean forward return) = {baselines[h]:.4f}%")
+        save_model(model, f"forward_{h}d")
 
     return df, models, baselines
 
@@ -148,18 +166,23 @@ def run_multiday_predictions(df, models, baselines, symbols):
             continue  # not enough history yet for this instrument
 
         target_date = latest["tradingDate"].date().isoformat()
+        anchor_close = float(latest["close"])
         feature_row = latest[MULTIDAY_FEATURES].to_frame().T.apply(pd.to_numeric, errors="coerce")
 
         for h in HORIZONS:
-            predicted_return = models[h].predict(feature_row)[0]
+            predicted_return = float(models[h].predict(feature_row)[0])
+            baseline_return = float(baselines[h])
             post_json("/api/ai-predictions", {
                 "instrument": sym,
                 "horizon": f"FORWARD_{h}D",
                 "valueType": "RETURN_PCT",
                 "modelVersion": MODEL_VERSION,
-                "predictedValue": round(float(predicted_return), 4),
-                "baselineValue": round(float(baselines[h]), 4),
+                "predictedValue": round(predicted_return, 4),
+                "baselineValue": round(baseline_return, 4),
                 "targetDate": target_date,
+                # Real rupee price converted from the % return using the anchor close - item #7.
+                "predictedPrice": round(anchor_close * (1 + predicted_return / 100), 4),
+                "baselinePrice": round(anchor_close * (1 + baseline_return / 100), 4),
             })
             submitted += 1
     print(f"  submitted {submitted} multi-day predictions")

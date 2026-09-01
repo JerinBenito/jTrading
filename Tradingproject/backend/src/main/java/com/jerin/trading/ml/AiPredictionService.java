@@ -47,7 +47,8 @@ public class AiPredictionService {
 
     @Transactional
     public AiPrediction recordPrediction(String instrument, String horizon, String valueType, String modelVersion,
-                                          BigDecimal predictedValue, BigDecimal baselineValue, LocalDate targetDate) {
+                                          BigDecimal predictedValue, BigDecimal baselineValue, LocalDate targetDate,
+                                          BigDecimal predictedPrice, BigDecimal baselinePrice) {
         Optional<AiPrediction> existing = predictionRepository.findByInstrumentAndHorizonAndTargetDate(instrument, horizon, targetDate);
         AiPrediction prediction = existing.orElseGet(AiPrediction::new);
         prediction.setInstrument(instrument);
@@ -58,6 +59,12 @@ public class AiPredictionService {
         prediction.setTargetDate(targetDate);
         prediction.setPredictedValue(predictedValue);
         prediction.setBaselineValue(baselineValue);
+        // For PRICE-typed predictions (INTRADAY), the value already IS a price — always derive
+        // it from predictedValue/baselineValue rather than trusting a possibly-stale caller-
+        // supplied one. For RETURN_PCT (FORWARD_*), the caller supplies the converted price
+        // since only it knows the anchor close the % was computed from.
+        prediction.setPredictedPrice("PRICE".equals(valueType) ? predictedValue : predictedPrice);
+        prediction.setBaselinePrice("PRICE".equals(valueType) ? baselineValue : baselinePrice);
         return predictionRepository.save(prediction);
     }
 
@@ -68,14 +75,16 @@ public class AiPredictionService {
         int evaluated = 0;
 
         for (AiPrediction prediction : pending) {
-            BigDecimal actual = "INTRADAY".equals(prediction.getHorizon())
+            ActualOutcome outcome = "INTRADAY".equals(prediction.getHorizon())
                     ? actualIntradayClose(prediction, today)
                     : actualForwardReturn(prediction, today);
-            if (actual == null) {
+            if (outcome == null) {
                 continue; // outcome not knowable yet
             }
 
+            BigDecimal actual = outcome.value();
             prediction.setActualValue(actual);
+            prediction.setActualPrice(outcome.price());
             BigDecimal aiError = actual.subtract(prediction.getPredictedValue()).abs().setScale(4, RoundingMode.HALF_UP);
             BigDecimal baselineError = actual.subtract(prediction.getBaselineValue()).abs().setScale(4, RoundingMode.HALF_UP);
             prediction.setAiErrorAbs(aiError);
@@ -96,8 +105,13 @@ public class AiPredictionService {
         return evaluated;
     }
 
+    /** The realized outcome, both as the value being scored (price for INTRADAY, % return for
+     * FORWARD_*) and as a plain rupee price either way. */
+    private record ActualOutcome(BigDecimal value, BigDecimal price) {
+    }
+
     /** INTRADAY: the actual close of the prediction's own target day, once that day is over. */
-    private BigDecimal actualIntradayClose(AiPrediction prediction, LocalDate today) {
+    private ActualOutcome actualIntradayClose(AiPrediction prediction, LocalDate today) {
         if (!today.isAfter(prediction.getTargetDate())) {
             return null;
         }
@@ -108,11 +122,12 @@ public class AiPredictionService {
         if (dayCandles.isEmpty()) {
             return null;
         }
-        return dayCandles.get(dayCandles.size() - 1).getClose();
+        BigDecimal close = dayCandles.get(dayCandles.size() - 1).getClose();
+        return new ActualOutcome(close, close);
     }
 
     /** FORWARD_Nd: the actual % return from the target date's close to N trading days later, once that day exists. */
-    private BigDecimal actualForwardReturn(AiPrediction prediction, LocalDate today) {
+    private ActualOutcome actualForwardReturn(AiPrediction prediction, LocalDate today) {
         Integer horizonDays = FORWARD_HORIZON_DAYS.get(prediction.getHorizon());
         if (horizonDays == null) {
             return null;
@@ -137,8 +152,9 @@ public class AiPredictionService {
         if (fromClose.compareTo(BigDecimal.ZERO) == 0) {
             return null;
         }
-        return toClose.subtract(fromClose).divide(fromClose, 6, RoundingMode.HALF_UP)
+        BigDecimal returnPct = toClose.subtract(fromClose).divide(fromClose, 6, RoundingMode.HALF_UP)
                 .multiply(BigDecimal.valueOf(100)).setScale(4, RoundingMode.HALF_UP);
+        return new ActualOutcome(returnPct, toClose);
     }
 
     public List<AiPrediction> history(String instrument, String horizon) {

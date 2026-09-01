@@ -27,14 +27,19 @@ public class AiPredictionController {
     public record RecordRequest(
             String instrument, String horizon, String valueType, String modelVersion,
             BigDecimal predictedValue, BigDecimal baselineValue,
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate targetDate) {
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate targetDate,
+            /** Only needed for RETURN_PCT (FORWARD_*) predictions — the % converted to a real
+             * price using the anchor close the caller computed it from. Ignored for PRICE
+             * (INTRADAY), which derives its price directly from predictedValue/baselineValue. */
+            BigDecimal predictedPrice, BigDecimal baselinePrice) {
     }
 
     @PostMapping
     public AiPrediction record(@RequestBody RecordRequest request) {
         return predictionService.recordPrediction(
                 request.instrument(), request.horizon(), request.valueType(), request.modelVersion(),
-                request.predictedValue(), request.baselineValue(), request.targetDate());
+                request.predictedValue(), request.baselineValue(), request.targetDate(),
+                request.predictedPrice(), request.baselinePrice());
     }
 
     /** Evaluates every pending prediction across all instruments/horizons whose outcome is now knowable. */

@@ -37,3 +37,14 @@ jobs:
       - run: pip install -r requirements.txt
 
       - run: python run_daily_ai_prediction.py
+
+      - uses: actions/upload-artifact@v4
+        # Only the first successful firing each day actually trains/saves models (redundant
+        # later firings skip via already_ran_today()); if-no-files-found handles that gracefully
+        # instead of failing the workflow. This is what makes each day's live predictions traceable
+        # to a real, downloadable model file (see model_version = lgbm-v1-run<GITHUB_RUN_ID>).
+        with:
+          name: ai-models-${{ github.run_id }}
+          path: Tradingproject/ml-training/models/
+          if-no-files-found: ignore
+          retention-days: 90
