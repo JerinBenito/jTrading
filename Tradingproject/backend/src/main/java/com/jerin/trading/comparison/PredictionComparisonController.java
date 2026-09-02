@@ -26,4 +26,9 @@ public class PredictionComparisonController {
                                                  @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
         return comparisonService.compare(instrument, date);
     }
+
+    @GetMapping("/{instrument}/leaderboard")
+    public ModelLeaderboard leaderboard(@PathVariable String instrument) {
+        return comparisonService.leaderboard(instrument);
+    }
 }

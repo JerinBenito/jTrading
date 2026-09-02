@@ -70,4 +70,31 @@ public class QuartzConfig {
                         .inTimeZone(TimeZone.getTimeZone("Asia/Kolkata")))
                 .build();
     }
+
+    @Bean
+    public JobDetail githubDispatchJobDetail(GithubActionsDispatchService githubActionsDispatchService) {
+        JobDataMap jobDataMap = new JobDataMap();
+        jobDataMap.put("githubActionsDispatchService", githubActionsDispatchService);
+        return JobBuilder.newJob(GithubActionsDispatchJob.class)
+                .withIdentity("githubDispatchJob")
+                .usingJobData(jobDataMap)
+                .storeDurably()
+                .build();
+    }
+
+    /**
+     * Triggers the Daily AI Prediction workflow at a precise time via workflow_dispatch — see
+     * {@link GithubActionsDispatchService} for why this replaced relying on GitHub's own
+     * schedule: cron (observed running hours late). 9:25 IST, shortly after market open.
+     */
+    @Bean
+    public Trigger githubDispatchTrigger(JobDetail githubDispatchJobDetail) {
+        return TriggerBuilder.newTrigger()
+                .forJob(githubDispatchJobDetail)
+                .withIdentity("githubDispatchTrigger")
+                .withSchedule(CronScheduleBuilder
+                        .cronSchedule("0 25 9 ? * MON-FRI")
+                        .inTimeZone(TimeZone.getTimeZone("Asia/Kolkata")))
+                .build();
+    }
 }

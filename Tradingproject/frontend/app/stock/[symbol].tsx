@@ -26,6 +26,7 @@ export default function StockDetailScreen() {
   const dailyRange = useApiData(() => api.getDailyRangeCalibrationBacktest(symbol), [symbol]);
   const reanchor = useApiData(() => api.getIntradayReanchorBacktest(symbol), [symbol]);
   const comparison = useApiData(() => api.getPredictionComparison(symbol), [symbol]);
+  const leaderboard = useApiData(() => api.getModelLeaderboard(symbol), [symbol]);
   const live = useLiveFeed(symbol);
 
   const [manualRefreshing, setManualRefreshing] = useState(false);
@@ -37,6 +38,7 @@ export default function StockDetailScreen() {
     dailyRange.refresh();
     reanchor.refresh();
     comparison.refresh();
+    leaderboard.refresh();
     setTimeout(() => setManualRefreshing(false), 600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -111,7 +113,7 @@ export default function StockDetailScreen() {
         </>
       )}
 
-      <PredictionComparisonTable rows={comparison.data?.rows ?? []} />
+      <PredictionComparisonTable rows={comparison.data?.rows ?? []} leaderboard={leaderboard.data} />
 
       <Text style={styles.sectionLabel}>Analysis — walk-forward, recomputed from {symbol}'s own history</Text>
       {reanchor.data && <IntradayReanchorTable result={reanchor.data} />}

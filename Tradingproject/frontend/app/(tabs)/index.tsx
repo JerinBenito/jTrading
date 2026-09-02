@@ -25,6 +25,7 @@ export default function DashboardScreen() {
   const rangeHourly = useApiData(() => api.getRangeCalibration(instrument, '1h'), [instrument]);
   const rangeDaily = useApiData(() => api.getRangeCalibration(instrument, '1d'), [instrument]);
   const comparison = useApiData(() => api.getPredictionComparison(instrument), [instrument]);
+  const leaderboard = useApiData(() => api.getModelLeaderboard(instrument), [instrument]);
   const live = useLiveFeed(instrument);
 
   const [manualRefreshing, setManualRefreshing] = useState(false);
@@ -36,6 +37,7 @@ export default function DashboardScreen() {
     rangeHourly.refresh();
     rangeDaily.refresh();
     comparison.refresh();
+    leaderboard.refresh();
     setTimeout(() => setManualRefreshing(false), 600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [instrument]);
@@ -97,7 +99,7 @@ export default function DashboardScreen() {
 
           <RangeCalibrationRow hourly={rangeHourly.data} daily={rangeDaily.data} />
 
-          <PredictionComparisonTable rows={comparison.data?.rows ?? []} />
+          <PredictionComparisonTable rows={comparison.data?.rows ?? []} leaderboard={leaderboard.data} />
         </>
       )}
     </ScrollView>

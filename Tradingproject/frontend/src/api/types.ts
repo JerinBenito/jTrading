@@ -119,8 +119,11 @@ export interface BasketSnapshot {
 }
 
 /** One model's prediction for a given day, normalized so DETERMINISTIC and AI rows render in the
- * same table. rangeLow/rangeHigh only apply to DETERMINISTIC; baselinePrice/betterThanBaseline/
- * directionCorrect only apply to AI. */
+ * same table. rangeLow/rangeHigh: DETERMINISTIC's calibrated range, or AI's historical-error band
+ * (null until it has enough evaluated history to compute one honestly). baselinePrice only
+ * applies to AI. currentPrice is the latest real price for this day regardless of whether this
+ * row has been formally scored yet (evaluated) — use it to show a live number instead of a blank
+ * "pending" state. */
 export interface PredictionComparisonRow {
   source: 'DETERMINISTIC' | 'AI';
   label: string;
@@ -130,6 +133,7 @@ export interface PredictionComparisonRow {
   rangeLow: number | null;
   rangeHigh: number | null;
   baselinePrice: number | null;
+  currentPrice: number | null;
   actualPrice: number | null;
   evaluated: boolean;
   betterThanBaseline: boolean | null;
@@ -140,4 +144,15 @@ export interface PredictionComparisonResponse {
   instrument: string;
   date: string;
   rows: PredictionComparisonRow[];
+}
+
+/** Head-to-head accuracy between the two live models over their most recent shared evaluated
+ * days for one instrument — real recorded outcomes, not a live-updating score. sampleSize grows
+ * slowly since both ledgers are young; treat small samples as not yet meaningful. */
+export interface ModelLeaderboard {
+  instrument: string;
+  sampleSize: number;
+  deterministicWins: number;
+  aiWins: number;
+  ties: number;
 }

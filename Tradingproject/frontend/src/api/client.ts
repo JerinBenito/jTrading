@@ -5,6 +5,7 @@ import type {
   DailyTrajectory,
   HealthStatus,
   IntradayReanchorBacktestResult,
+  ModelLeaderboard,
   Prediction,
   PredictionComparisonResponse,
   RangeCalibrationBacktestResult,
@@ -77,4 +78,8 @@ export const api = {
   /** Every model's prediction for one instrument+day (deterministic + all AI horizons), normalized into one list. */
   getPredictionComparison: (instrument: string, date?: string) =>
     getJson<PredictionComparisonResponse>(`/api/predictions-comparison/${instrument}${date ? `?date=${date}` : ''}`),
+
+  /** Which live model has actually been more accurate lately for this instrument, from real recorded outcomes. */
+  getModelLeaderboard: (instrument: string) =>
+    getJson<ModelLeaderboard>(`/api/predictions-comparison/${instrument}/leaderboard`),
 };

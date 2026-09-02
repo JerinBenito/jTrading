@@ -120,8 +120,11 @@ export function TrajectoryChart({
           )}
           <View style={styles.deviationPill}>
             <Text style={[styles.deviationText, { color: lineColor }]}>
-              {lastPoint.deviationPct >= 0 ? '+' : ''}
-              {lastPoint.deviationPct.toFixed(2)}%
+              {formatPrice(lastPoint.actualClose)}{' '}
+              <Text style={styles.deviationPct}>
+                ({lastPoint.deviationPct >= 0 ? '+' : ''}
+                {lastPoint.deviationPct.toFixed(2)}%)
+              </Text>
             </Text>
           </View>
         </View>
@@ -370,6 +373,10 @@ const styles = StyleSheet.create({
   deviationText: {
     fontSize: 12,
     fontWeight: '700',
+  },
+  deviationPct: {
+    fontWeight: '600',
+    opacity: 0.85,
   },
   empty: {
     color: colors.textMuted,

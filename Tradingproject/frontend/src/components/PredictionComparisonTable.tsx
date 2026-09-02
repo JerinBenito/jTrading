@@ -1,13 +1,33 @@
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Text, View } from 'react-native';
 import { colors } from '../constants/colors';
-import type { PredictionComparisonRow } from '../api/types';
+import type { ModelLeaderboard, PredictionComparisonRow } from '../api/types';
 
 function formatPrice(value: number | null) {
   return value !== null ? value.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '—';
 }
 
-export function PredictionComparisonTable({ rows }: { rows: PredictionComparisonRow[] }) {
+function formatPct(value: number) {
+  return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+}
+
+/** Price + how far it's moved from the prediction, together — never just a bare percentage. */
+function PriceWithDelta({ price, predictedPrice, color }: { price: number; predictedPrice: number; color: string }) {
+  const pct = ((price - predictedPrice) / predictedPrice) * 100;
+  return (
+    <Text style={styles.valueText}>
+      {formatPrice(price)} <Text style={[styles.deltaInline, { color }]}>({formatPct(pct)})</Text>
+    </Text>
+  );
+}
+
+export function PredictionComparisonTable({
+  rows,
+  leaderboard,
+}: {
+  rows: PredictionComparisonRow[];
+  leaderboard?: ModelLeaderboard | null;
+}) {
   if (rows.length === 0) {
     return (
       <View style={styles.card}>
@@ -22,8 +42,21 @@ export function PredictionComparisonTable({ rows }: { rows: PredictionComparison
       <Text style={styles.title}>Model comparison</Text>
       <Text style={styles.subtitle}>Every model's call for this day, side by side with what actually happened.</Text>
 
-      {rows.map((row) => (
-        <RowCard key={`${row.source}-${row.label}`} row={row} />
+      {leaderboard && leaderboard.sampleSize > 0 && (
+        <View style={styles.leaderboard}>
+          <Ionicons name="trophy-outline" size={13} color={colors.textSecondary} />
+          <Text style={styles.leaderboardText}>
+            Last {leaderboard.sampleSize} shared days —{' '}
+            <Text style={{ color: colors.accent, fontWeight: '700' }}>deterministic {leaderboard.deterministicWins}</Text>
+            {', '}
+            <Text style={{ color: colors.ai, fontWeight: '700' }}>AI {leaderboard.aiWins}</Text>
+            {leaderboard.ties > 0 ? `, ${leaderboard.ties} tied` : ''}
+          </Text>
+        </View>
+      )}
+
+      {rows.map((row, i) => (
+        <RowCard key={`${row.source}-${row.label}-${i}`} row={row} />
       ))}
     </View>
   );
@@ -32,6 +65,7 @@ export function PredictionComparisonTable({ rows }: { rows: PredictionComparison
 function RowCard({ row }: { row: PredictionComparisonRow }) {
   const isAi = row.source === 'AI';
   const accentColor = isAi ? colors.ai : colors.accent;
+  const referencePrice = row.actualPrice ?? row.currentPrice;
   const hit = row.evaluated
     ? row.actualPrice !== null &&
       ((row.rangeLow !== null && row.rangeHigh !== null && row.actualPrice >= row.rangeLow && row.actualPrice <= row.rangeHigh) ||
@@ -51,15 +85,28 @@ function RowCard({ row }: { row: PredictionComparisonRow }) {
       <View style={styles.valuesRow}>
         <Value label="Predicted" value={formatPrice(row.predictedPrice)} accent={accentColor} />
         {row.rangeLow !== null && row.rangeHigh !== null && (
-          <Value label="Range" value={`${formatPrice(row.rangeLow)} – ${formatPrice(row.rangeHigh)}`} />
+          <Value label={isAi ? 'Error band' : 'Range'} value={`${formatPrice(row.rangeLow)} – ${formatPrice(row.rangeHigh)}`} />
         )}
         {row.baselinePrice !== null && <Value label="Baseline" value={formatPrice(row.baselinePrice)} />}
-        <Value label="Actual" value={formatPrice(row.actualPrice)} />
+        <View style={styles.valueBox}>
+          <Text style={styles.valueLabel}>{row.evaluated ? 'Actual' : 'Current'}</Text>
+          {referencePrice !== null && row.predictedPrice !== null ? (
+            <PriceWithDelta
+              price={referencePrice}
+              predictedPrice={row.predictedPrice}
+              color={referencePrice >= row.predictedPrice ? colors.up : colors.down}
+            />
+          ) : (
+            <Text style={styles.valueText}>—</Text>
+          )}
+        </View>
       </View>
 
       <View style={styles.footerRow}>
         {!row.evaluated ? (
-          <Text style={styles.pendingText}>Pending</Text>
+          <Text style={styles.pendingText}>
+            {row.currentPrice !== null ? 'Live — not yet scored' : 'Pending'}
+          </Text>
         ) : (
           <>
             {hit !== null && (
@@ -120,6 +167,20 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 12,
   },
+  leaderboard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  leaderboardText: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    flexShrink: 1,
+  },
   row: {
     backgroundColor: colors.surfaceAlt,
     borderRadius: 14,
@@ -168,6 +229,10 @@ const styles = StyleSheet.create({
   valueText: {
     color: colors.textPrimary,
     fontSize: 13,
+    fontWeight: '700',
+  },
+  deltaInline: {
+    fontSize: 11,
     fontWeight: '700',
   },
   footerRow: {

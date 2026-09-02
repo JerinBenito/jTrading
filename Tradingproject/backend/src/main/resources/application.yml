@@ -28,6 +28,11 @@ upstox:
   api-secret: ${UPSTOX_API_SECRET:}
   redirect-uri: ${UPSTOX_REDIRECT_URI:http://localhost:8080/auth/upstox/callback}
 
+github-dispatch:
+  token: ${GITHUB_DISPATCH_TOKEN:}
+  repo: JerinBenito/jTrading
+  workflow-file: daily-ai-prediction.yml
+
 server:
   port: ${SERVER_PORT:8080}
 
