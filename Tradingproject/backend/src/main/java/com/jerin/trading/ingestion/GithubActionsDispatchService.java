@@ -41,8 +41,12 @@ public class GithubActionsDispatchService {
             return;
         }
         try {
+            // "owner/repo" must be two separate path segments — templating it into one {repo}
+            // variable makes RestClient percent-encode the "/" as %2F, which GitHub 404s on.
+            String[] ownerAndRepo = properties.repo().split("/", 2);
             restClient.post()
-                    .uri("/repos/{repo}/actions/workflows/{workflowFile}/dispatches", properties.repo(), properties.workflowFile())
+                    .uri("/repos/{owner}/{repoName}/actions/workflows/{workflowFile}/dispatches",
+                            ownerAndRepo[0], ownerAndRepo[1], properties.workflowFile())
                     .header("Authorization", "Bearer " + properties.token())
                     .header("Accept", "application/vnd.github+json")
                     .contentType(MediaType.APPLICATION_JSON)
