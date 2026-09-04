@@ -3,6 +3,8 @@ package com.jerin.trading.ingestion;
 import com.jerin.trading.forecast.DailyForecastPredictionService;
 import com.jerin.trading.forecast.DailyHmmPredictionService;
 import com.jerin.trading.forecast.ForecastPredictionService;
+import com.jerin.trading.globalmarket.GlobalMarketDataJob;
+import com.jerin.trading.globalmarket.GlobalMarketDataService;
 import com.jerin.trading.ml.AdaptiveSelectionService;
 import com.jerin.trading.ml.AiPredictionService;
 import com.jerin.trading.signal.OutcomeEvaluationService;
@@ -100,6 +102,33 @@ public class QuartzConfig {
                 .withIdentity("githubDispatchTrigger")
                 .withSchedule(CronScheduleBuilder
                         .cronSchedule("0 25 9 ? * MON-FRI")
+                        .inTimeZone(TimeZone.getTimeZone("Asia/Kolkata")))
+                .build();
+    }
+
+    @Bean
+    public JobDetail globalMarketDataJobDetail(GlobalMarketDataService globalMarketDataService) {
+        JobDataMap jobDataMap = new JobDataMap();
+        jobDataMap.put("globalMarketDataService", globalMarketDataService);
+        return JobBuilder.newJob(GlobalMarketDataJob.class)
+                .withIdentity("globalMarketDataJob")
+                .usingJobData(jobDataMap)
+                .storeDurably()
+                .build();
+    }
+
+    /**
+     * 9:05 IST, shortly before market open — by then the just-finished US session, crude oil,
+     * and USD/INR are all fully settled (US markets close ~1:30-2:30 AM IST depending on DST),
+     * so this captures a clean overnight read before today's own Indian price action starts.
+     */
+    @Bean
+    public Trigger globalMarketDataTrigger(JobDetail globalMarketDataJobDetail) {
+        return TriggerBuilder.newTrigger()
+                .forJob(globalMarketDataJobDetail)
+                .withIdentity("globalMarketDataTrigger")
+                .withSchedule(CronScheduleBuilder
+                        .cronSchedule("0 5 9 ? * MON-FRI")
                         .inTimeZone(TimeZone.getTimeZone("Asia/Kolkata")))
                 .build();
     }
