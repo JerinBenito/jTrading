@@ -65,6 +65,7 @@ export function PredictionComparisonTable({
 function RowCard({ row }: { row: PredictionComparisonRow }) {
   const isAi = row.source === 'AI';
   const accentColor = isAi ? colors.ai : colors.accent;
+  const isExperimental = row.label.includes('unvalidated');
   const referencePrice = row.actualPrice ?? row.currentPrice;
   const hit = row.evaluated
     ? row.actualPrice !== null &&
@@ -80,6 +81,11 @@ function RowCard({ row }: { row: PredictionComparisonRow }) {
           <Text style={[styles.sourceBadgeText, { color: accentColor }]}>{row.source}</Text>
         </View>
         <Text style={styles.label}>{row.label}</Text>
+        {isExperimental && (
+          <View style={styles.experimentalBadge}>
+            <Text style={styles.experimentalBadgeText}>NOT VALIDATED</Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.valuesRow}>
@@ -204,6 +210,18 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '800',
     letterSpacing: 0.4,
+  },
+  experimentalBadge: {
+    backgroundColor: `${colors.neutral}22`,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  experimentalBadgeText: {
+    color: colors.neutral,
+    fontSize: 8,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
   label: {
     color: colors.textPrimary,

@@ -36,6 +36,9 @@ public class AiPredictionService {
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final Map<String, Integer> FORWARD_HORIZON_DAYS = Map.of(
             "FORWARD_5D", 5, "FORWARD_10D", 10, "FORWARD_20D", 20, "FORWARD_40D", 40);
+    /** Same-day-close outcome resolution applies to both the raw AI prediction and
+     * {@link AdaptiveSelectionService}'s pick — both target the same day's actual close. */
+    private static final java.util.Set<String> INTRADAY_LIKE_HORIZONS = java.util.Set.of("INTRADAY", "INTRADAY_ADAPTIVE");
 
     private final AiPredictionRepository predictionRepository;
     private final OhlcvCandleRepository candleRepository;
@@ -75,7 +78,7 @@ public class AiPredictionService {
         int evaluated = 0;
 
         for (AiPrediction prediction : pending) {
-            ActualOutcome outcome = "INTRADAY".equals(prediction.getHorizon())
+            ActualOutcome outcome = INTRADAY_LIKE_HORIZONS.contains(prediction.getHorizon())
                     ? actualIntradayClose(prediction, today)
                     : actualForwardReturn(prediction, today);
             if (outcome == null) {

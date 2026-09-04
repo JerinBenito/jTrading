@@ -4,6 +4,8 @@ import com.jerin.trading.domain.HourlyPrediction;
 import com.jerin.trading.domain.OhlcvCandle;
 import com.jerin.trading.ml.AiPrediction;
 import com.jerin.trading.ml.AiPredictionRepository;
+import com.jerin.trading.ml.HeadToHeadDay;
+import com.jerin.trading.ml.ModelHeadToHeadService;
 import com.jerin.trading.repository.HourlyPredictionRepository;
 import com.jerin.trading.repository.OhlcvCandleRepository;
 import org.springframework.stereotype.Service;
@@ -15,10 +17,8 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 
 /**
  * Pulls together every model's prediction for one instrument+day into one normalized list — the
@@ -32,6 +32,7 @@ public class PredictionComparisonService {
     private static final String DAILY_INTERVAL = "1d";
     private static final String HOURLY_INTERVAL = "1h";
     private static final String INTRADAY_HORIZON = "INTRADAY";
+    private static final String ADAPTIVE_HORIZON = "INTRADAY_ADAPTIVE";
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final List<String> FORWARD_HORIZONS = List.of("FORWARD_5D", "FORWARD_10D", "FORWARD_20D", "FORWARD_40D");
     private static final DateTimeFormatter HOUR_FORMATTER = DateTimeFormatter.ofPattern("h a", Locale.ENGLISH);
@@ -42,13 +43,16 @@ public class PredictionComparisonService {
     private final OhlcvCandleRepository candleRepository;
     private final HourlyPredictionRepository hourlyPredictionRepository;
     private final AiPredictionRepository aiPredictionRepository;
+    private final ModelHeadToHeadService headToHeadService;
 
     public PredictionComparisonService(OhlcvCandleRepository candleRepository,
                                         HourlyPredictionRepository hourlyPredictionRepository,
-                                        AiPredictionRepository aiPredictionRepository) {
+                                        AiPredictionRepository aiPredictionRepository,
+                                        ModelHeadToHeadService headToHeadService) {
         this.candleRepository = candleRepository;
         this.hourlyPredictionRepository = hourlyPredictionRepository;
         this.aiPredictionRepository = aiPredictionRepository;
+        this.headToHeadService = headToHeadService;
     }
 
     public PredictionComparisonResponse compare(String instrument, LocalDate date) {
@@ -67,6 +71,9 @@ public class PredictionComparisonService {
         aiPredictionRepository.findByInstrumentAndHorizonAndTargetDate(instrument, INTRADAY_HORIZON, targetDate)
                 .ifPresent(p -> rows.add(toAiRow(p, "AI same-day close", currentPrice)));
 
+        aiPredictionRepository.findByInstrumentAndHorizonAndTargetDate(instrument, ADAPTIVE_HORIZON, targetDate)
+                .ifPresent(p -> rows.add(toAiRow(p, "AI (adaptive, unvalidated)", currentPrice)));
+
         for (String horizon : FORWARD_HORIZONS) {
             aiPredictionRepository.findByInstrumentAndHorizonAndTargetDate(instrument, horizon, targetDate)
                     .ifPresent(p -> rows.add(toAiRow(p, "AI forward " + horizonLabel(horizon), currentPrice)));
@@ -80,40 +87,20 @@ public class PredictionComparisonService {
      * days — real recorded outcomes only, see {@link ModelLeaderboard}.
      */
     public ModelLeaderboard leaderboard(String instrument) {
-        List<HourlyPrediction> deterministic = hourlyPredictionRepository.findRecentEvaluated(instrument, DAILY_INTERVAL);
-        Map<LocalDate, BigDecimal> deterministicErrorByDate = new HashMap<>();
-        for (HourlyPrediction p : deterministic) {
-            LocalDate d = p.getPredictedForTs().atZoneSameInstant(IST).toLocalDate();
-            deterministicErrorByDate.put(d, p.getActualClose().subtract(p.getPredictedClose()).abs());
-        }
-
-        List<AiPrediction> ai = aiPredictionRepository.findRecentEvaluated(instrument, INTRADAY_HORIZON);
+        List<HeadToHeadDay> days = headToHeadService.recentSharedDays(instrument, LEADERBOARD_LOOKBACK);
         int deterministicWins = 0;
         int aiWins = 0;
         int ties = 0;
-        int sampleSize = 0;
-        for (AiPrediction p : ai) {
-            if (sampleSize >= LEADERBOARD_LOOKBACK) {
-                break;
-            }
-            BigDecimal detError = deterministicErrorByDate.get(p.getTargetDate());
-            // predictedPrice/actualPrice can be null on rows predating the V8 price-field
-            // migration — skip those rather than compare on stale/incomplete data.
-            if (detError == null || p.getActualPrice() == null || p.getPredictedPrice() == null) {
-                continue;
-            }
-            BigDecimal aiError = p.getActualPrice().subtract(p.getPredictedPrice()).abs();
-            int cmp = aiError.compareTo(detError);
-            if (cmp < 0) {
+        for (HeadToHeadDay day : days) {
+            if (day.aiWon()) {
                 aiWins++;
-            } else if (cmp > 0) {
+            } else if (day.deterministicWon()) {
                 deterministicWins++;
             } else {
                 ties++;
             }
-            sampleSize++;
         }
-        return new ModelLeaderboard(instrument, sampleSize, deterministicWins, aiWins, ties);
+        return new ModelLeaderboard(instrument, days.size(), deterministicWins, aiWins, ties);
     }
 
     private void addDeterministicRow(String instrument, LocalDate targetDate, List<OhlcvCandle> dayCandles,

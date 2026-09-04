@@ -2,6 +2,7 @@ package com.jerin.trading.ingestion;
 
 import com.jerin.trading.forecast.DailyForecastPredictionService;
 import com.jerin.trading.forecast.ForecastPredictionService;
+import com.jerin.trading.ml.AdaptiveSelectionService;
 import com.jerin.trading.ml.AiPredictionService;
 import com.jerin.trading.signal.OutcomeEvaluationService;
 import com.jerin.trading.signal.SignalResponse;
@@ -38,6 +39,7 @@ public class IngestionJob implements Job {
     private FuturesIngestionService futuresIngestionService;
     private EquityBasketIngestionService equityBasketIngestionService;
     private AiPredictionService aiPredictionService;
+    private AdaptiveSelectionService adaptiveSelectionService;
 
     public void setIngestionService(IngestionService ingestionService) {
         this.ingestionService = ingestionService;
@@ -53,6 +55,10 @@ public class IngestionJob implements Job {
 
     public void setAiPredictionService(AiPredictionService aiPredictionService) {
         this.aiPredictionService = aiPredictionService;
+    }
+
+    public void setAdaptiveSelectionService(AdaptiveSelectionService adaptiveSelectionService) {
+        this.adaptiveSelectionService = adaptiveSelectionService;
     }
 
     public void setSignalService(SignalService signalService) {
@@ -99,6 +105,14 @@ public class IngestionJob implements Job {
                     log.info("{} daily forecast(s) evaluated for {}", dailyEvaluated, instrument);
                 }
                 dailyForecastPredictionService.recordTodayPrediction(instrument.name());
+
+                // Separate try/catch: an adaptive-selection hiccup must never affect the
+                // deterministic/AI predictions it merely observes and picks between.
+                try {
+                    adaptiveSelectionService.recordTodayPrediction(instrument.name());
+                } catch (Exception e) {
+                    log.error("Adaptive selection failed for {}", instrument, e);
+                }
             } catch (Exception e) {
                 log.error("Hourly cycle failed for {}", instrument, e);
             }
@@ -133,6 +147,11 @@ public class IngestionJob implements Job {
                     dailyForecastPredictionService.recordTodayPrediction(result.symbol());
                 } catch (Exception e) {
                     log.error("Daily forecast cycle failed for basket stock {}", result.symbol(), e);
+                }
+                try {
+                    adaptiveSelectionService.recordTodayPrediction(result.symbol());
+                } catch (Exception e) {
+                    log.error("Adaptive selection failed for basket stock {}", result.symbol(), e);
                 }
             }
         } catch (Exception e) {
