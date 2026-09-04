@@ -6,9 +6,10 @@ package com.jerin.trading.ingestion;
  */
 public enum Instrument {
 
-    // NSE discontinued weekly BANKNIFTY options (monthly only now) — "current_week" silently
-    // returns zero rows for it, so each instrument gets its own valid expiry keyword.
-    NIFTY("NSE_INDEX|Nifty 50", "current_week"),
+    // NSE has discontinued weekly options for both indices (BANKNIFTY earlier; NIFTY's
+    // "current_week" started silently returning zero rows too as of ~2026-09-01, confirmed
+    // live against Upstox: current_week=0 rows, current_month=246 rows) — monthly only now.
+    NIFTY("NSE_INDEX|Nifty 50", "current_month"),
     BANKNIFTY("NSE_INDEX|Nifty Bank", "current_month");
 
     private final String brokerKey;
