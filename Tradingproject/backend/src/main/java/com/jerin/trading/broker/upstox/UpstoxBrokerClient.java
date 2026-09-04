@@ -137,6 +137,18 @@ public class UpstoxBrokerClient implements BrokerClient {
                 .map(row -> new FuturesContract(row.instrumentKey(), row.tradingSymbol(), LocalDate.parse(row.expiry())));
     }
 
+    /** Not part of {@link BrokerClient} yet — a live-verification spike for whether Upstox's
+     * newer Company Fundamentals API suite is real and reachable with our existing token,
+     * before building any actual ingestion around it. Returns the raw response body. */
+    public String getKeyRatiosRaw(String isin) {
+        return restClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/v2/fundamentals/{isin}/key-ratios")
+                        .build(isin))
+                .retrieve()
+                .body(String.class);
+    }
+
     @Override
     public Optional<String> findEquityInstrumentKey(String tradingSymbol) {
         UpstoxInstrumentSearchResponse response = restClient.get()
