@@ -30,6 +30,7 @@ import java.util.Locale;
 public class PredictionComparisonService {
 
     private static final String DAILY_INTERVAL = "1d";
+    private static final String HMM_INTERVAL = "1d_hmm";
     private static final String HOURLY_INTERVAL = "1h";
     private static final String INTRADAY_HORIZON = "INTRADAY";
     private static final String ADAPTIVE_HORIZON = "INTRADAY_ADAPTIVE";
@@ -66,6 +67,7 @@ public class PredictionComparisonService {
         BigDecimal currentPrice = dayCandles.isEmpty() ? null : dayCandles.get(dayCandles.size() - 1).getClose();
 
         addDeterministicRow(instrument, targetDate, dayCandles, currentPrice, rows);
+        addHmmRow(instrument, targetDate, dayCandles, currentPrice, rows);
         addHourlyRows(instrument, dayCandles, rows);
 
         aiPredictionRepository.findByInstrumentAndHorizonAndTargetDate(instrument, INTRADAY_HORIZON, targetDate)
@@ -109,7 +111,18 @@ public class PredictionComparisonService {
             return;
         }
         hourlyPredictionRepository.findByInstrumentAndIntervalAndPredictedForTs(instrument, DAILY_INTERVAL, dayCandles.get(0).getTs())
-                .ifPresent(p -> rows.add(toDeterministicRow(p, targetDate, currentPrice)));
+                .ifPresent(p -> rows.add(toDeterministicRow(p, "Same-day close (random walk + bias correction)", targetDate, currentPrice)));
+    }
+
+    /** NOT validated — the HMM regime detector loses to random walk in backtest (see
+     * DailyHmmRegimeModel's javadoc), kept running live anyway per explicit request. */
+    private void addHmmRow(String instrument, LocalDate targetDate, List<OhlcvCandle> dayCandles,
+                            BigDecimal currentPrice, List<PredictionComparisonRow> rows) {
+        if (dayCandles.isEmpty()) {
+            return;
+        }
+        hourlyPredictionRepository.findByInstrumentAndIntervalAndPredictedForTs(instrument, HMM_INTERVAL, dayCandles.get(0).getTs())
+                .ifPresent(p -> rows.add(toDeterministicRow(p, "HMM regime (unvalidated)", targetDate, currentPrice)));
     }
 
     /** One row per hour so far today from the original rolling hourly-forecast model — its
@@ -122,9 +135,9 @@ public class PredictionComparisonService {
         }
     }
 
-    private PredictionComparisonRow toDeterministicRow(HourlyPrediction p, LocalDate targetDate, BigDecimal currentPrice) {
+    private PredictionComparisonRow toDeterministicRow(HourlyPrediction p, String label, LocalDate targetDate, BigDecimal currentPrice) {
         return new PredictionComparisonRow(
-                "DETERMINISTIC", "Same-day close (random walk + bias correction)", p.getModelName(), targetDate,
+                "DETERMINISTIC", label, p.getModelName(), targetDate,
                 p.getPredictedClose(), p.getRangeLow(), p.getRangeHigh(), null, currentPrice, p.getActualClose(),
                 p.getActualClose() != null, null, null);
     }
