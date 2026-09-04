@@ -94,11 +94,11 @@ public class IngestionJob implements Job {
                     log.info("{} outcome(s) evaluated for {}", evaluated, instrument);
                 }
 
-                int forecastsEvaluated = forecastPredictionService.evaluatePending(instrument, INTERVAL);
+                int forecastsEvaluated = forecastPredictionService.evaluatePending(instrument.name(), INTERVAL);
                 if (forecastsEvaluated > 0) {
                     log.info("{} hourly forecast(s) evaluated for {}", forecastsEvaluated, instrument);
                 }
-                forecastPredictionService.recordNextPrediction(instrument, INTERVAL);
+                forecastPredictionService.recordNextPrediction(instrument.name(), INTERVAL);
 
                 int dailyEvaluated = dailyForecastPredictionService.evaluatePending(instrument.name());
                 if (dailyEvaluated > 0) {
@@ -131,11 +131,12 @@ public class IngestionJob implements Job {
         // from the core pipeline above: a failure ingesting or forecasting one basket stock must
         // never affect NIFTY/BANKNIFTY's live signals/forecasts, or another basket stock's.
         //
-        // Only the same-day (close/high/low) forecast runs here, deliberately NOT the pattern
-        // signal engine — PatternStats is keyed by pattern id alone (no instrument column), so
-        // running it against 49 more stocks would corrupt NIFTY/BANKNIFTY's own win-rate stats.
-        // hourly_predictions has no such issue (genuinely keyed by instrument), which is what
-        // makes the same-day forecast safe to extend here.
+        // Deliberately NOT the pattern signal engine — PatternStats is keyed by pattern id alone
+        // (no instrument column), so running it against 49 more stocks would corrupt NIFTY/
+        // BANKNIFTY's own win-rate stats. Both hourly_predictions tables (this hourly loop AND
+        // the same-day forecast) have no such issue — genuinely keyed by instrument — which is
+        // what makes both safe to extend here. Hourly forecast added 2026-09-04: previously only
+        // ran for NIFTY/BANKNIFTY despite nothing architecturally preventing basket coverage.
         try {
             List<EquityIngestionResult> basketResults = equityBasketIngestionService.ingestTodayForBasket();
             for (EquityIngestionResult result : basketResults) {
@@ -147,6 +148,12 @@ public class IngestionJob implements Job {
                     dailyForecastPredictionService.recordTodayPrediction(result.symbol());
                 } catch (Exception e) {
                     log.error("Daily forecast cycle failed for basket stock {}", result.symbol(), e);
+                }
+                try {
+                    forecastPredictionService.evaluatePending(result.symbol(), INTERVAL);
+                    forecastPredictionService.recordNextPrediction(result.symbol(), INTERVAL);
+                } catch (Exception e) {
+                    log.error("Hourly forecast cycle failed for basket stock {}", result.symbol(), e);
                 }
                 try {
                     adaptiveSelectionService.recordTodayPrediction(result.symbol());

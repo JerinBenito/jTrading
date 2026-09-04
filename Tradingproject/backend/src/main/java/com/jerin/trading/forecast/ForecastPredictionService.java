@@ -3,7 +3,6 @@ package com.jerin.trading.forecast;
 import com.jerin.trading.domain.HourlyPrediction;
 import com.jerin.trading.domain.OhlcvCandle;
 import com.jerin.trading.indicator.AtrCalculator;
-import com.jerin.trading.ingestion.Instrument;
 import com.jerin.trading.repository.HourlyPredictionRepository;
 import com.jerin.trading.repository.OhlcvCandleRepository;
 import org.slf4j.Logger;
@@ -65,14 +64,14 @@ public class ForecastPredictionService {
     }
 
     @Transactional
-    public int evaluatePending(Instrument instrument, String interval) {
+    public int evaluatePending(String instrument, String interval) {
         List<HourlyPrediction> pending = predictionRepository
-                .findByInstrumentAndIntervalAndActualCloseIsNull(instrument.name(), interval);
+                .findByInstrumentAndIntervalAndActualCloseIsNull(instrument, interval);
 
         int evaluated = 0;
         for (HourlyPrediction prediction : pending) {
             Optional<OhlcvCandle> candle = candleRepository.findByInstrumentAndIntervalAndTs(
-                    instrument.name(), interval, prediction.getPredictedForTs());
+                    instrument, interval, prediction.getPredictedForTs());
             if (candle.isEmpty()) {
                 continue;
             }
@@ -81,7 +80,7 @@ public class ForecastPredictionService {
                     .divide(actual, 6, RoundingMode.HALF_UP).doubleValue() * 100;
 
             boolean covered = actual.compareTo(prediction.getRangeLow()) >= 0 && actual.compareTo(prediction.getRangeHigh()) <= 0;
-            rangeCalibrationService.recordOutcome(instrument.name(), interval, covered);
+            rangeCalibrationService.recordOutcome(instrument, interval, covered);
 
             prediction.setActualClose(actual);
             prediction.setErrorPct(BigDecimal.valueOf(errorPct).setScale(4, RoundingMode.HALF_UP));
@@ -96,9 +95,9 @@ public class ForecastPredictionService {
     }
 
     @Transactional
-    public HourlyPrediction recordNextPrediction(Instrument instrument, String interval) {
+    public HourlyPrediction recordNextPrediction(String instrument, String interval) {
         List<OhlcvCandle> candles = candleRepository
-                .findTop200ByInstrumentAndIntervalOrderByTsDesc(instrument.name(), interval);
+                .findTop200ByInstrumentAndIntervalOrderByTsDesc(instrument, interval);
         Collections.reverse(candles);
         if (candles.isEmpty()) {
             return null;
@@ -124,18 +123,18 @@ public class ForecastPredictionService {
             return null;
         }
 
-        if (predictionRepository.findByInstrumentAndIntervalAndPredictedForTs(instrument.name(), interval, predictedForTs).isPresent()) {
+        if (predictionRepository.findByInstrumentAndIntervalAndPredictedForTs(instrument, interval, predictedForTs).isPresent()) {
             return null; // already predicted this hour, don't duplicate
         }
 
         BigDecimal bias = rollingBias(instrument, interval);
         BigDecimal correctedClose = basePrediction.predictedClose().add(bias).setScale(2, RoundingMode.HALF_UP);
-        double multiplier = rangeCalibrationService.currentMultiplier(instrument.name(), interval);
+        double multiplier = rangeCalibrationService.currentMultiplier(instrument, interval);
         BigDecimal rangeWidth = basePrediction.rangeHigh().subtract(basePrediction.predictedClose())
                 .multiply(BigDecimal.valueOf(multiplier)).setScale(4, RoundingMode.HALF_UP);
 
         HourlyPrediction prediction = HourlyPrediction.builder()
-                .instrument(instrument.name())
+                .instrument(instrument)
                 .interval(interval)
                 .modelName(MODEL_NAME)
                 .predictedAtTs(latestTs)
@@ -167,8 +166,8 @@ public class ForecastPredictionService {
      * evaluated history exists, and zero whenever the observed bias isn't distinguishable
      * from noise.
      */
-    private BigDecimal rollingBias(Instrument instrument, String interval) {
-        List<HourlyPrediction> recent = predictionRepository.findRecentEvaluated(instrument.name(), interval);
+    private BigDecimal rollingBias(String instrument, String interval) {
+        List<HourlyPrediction> recent = predictionRepository.findRecentEvaluated(instrument, interval);
         List<Double> errors = recent.stream()
                 .limit(BIAS_WINDOW)
                 .map(p -> p.getActualClose().subtract(p.getPredictedClose()).doubleValue())

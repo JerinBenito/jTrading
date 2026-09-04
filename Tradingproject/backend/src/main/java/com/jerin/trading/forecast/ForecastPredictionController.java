@@ -32,12 +32,12 @@ public class ForecastPredictionController {
     @PostMapping("/{instrument}/predict-next")
     public HourlyPrediction predictNext(@PathVariable Instrument instrument,
                                          @RequestParam(defaultValue = "1h") String interval) {
-        return forecastPredictionService.recordNextPrediction(instrument, interval);
+        return forecastPredictionService.recordNextPrediction(instrument.name(), interval);
     }
 
     @PostMapping("/{instrument}/evaluate")
     public Map<String, Integer> evaluate(@PathVariable Instrument instrument,
                                           @RequestParam(defaultValue = "1h") String interval) {
-        return Map.of("evaluated", forecastPredictionService.evaluatePending(instrument, interval));
+        return Map.of("evaluated", forecastPredictionService.evaluatePending(instrument.name(), interval));
     }
 }
