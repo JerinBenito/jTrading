@@ -22,8 +22,11 @@ public class PatternController {
         this.volumeConfirmationBacktestService = volumeConfirmationBacktestService;
     }
 
+    /** {@code instrument} accepts NIFTY/BANKNIFTY as before, or any NIFTY 50 basket trading
+     * symbol — pattern_stats is genuinely keyed by (pattern_id, instrument, window_end) now,
+     * so recomputing one instrument's stats can no longer clobber another's. */
     @PostMapping("/{instrument}/recompute")
-    public List<PatternStats> recompute(@PathVariable Instrument instrument,
+    public List<PatternStats> recompute(@PathVariable String instrument,
                                          @RequestParam(defaultValue = "1h") String interval) {
         return patternStatsService.recomputeAll(instrument, interval);
     }

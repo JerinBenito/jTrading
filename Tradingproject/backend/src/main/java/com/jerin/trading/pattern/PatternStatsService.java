@@ -4,7 +4,6 @@ import com.jerin.trading.domain.OhlcvCandle;
 import com.jerin.trading.domain.PatternStats;
 import com.jerin.trading.indicator.EmaCalculator;
 import com.jerin.trading.indicator.RsiCalculator;
-import com.jerin.trading.ingestion.Instrument;
 import com.jerin.trading.repository.OhlcvCandleRepository;
 import com.jerin.trading.repository.PatternStatsRepository;
 import org.springframework.stereotype.Service;
@@ -40,8 +39,8 @@ public class PatternStatsService {
     }
 
     @Transactional
-    public List<PatternStats> recomputeAll(Instrument instrument, String interval) {
-        List<OhlcvCandle> candles = candleRepository.findByInstrumentAndIntervalOrderByTsAsc(instrument.name(), interval);
+    public List<PatternStats> recomputeAll(String instrument, String interval) {
+        List<OhlcvCandle> candles = candleRepository.findByInstrumentAndIntervalOrderByTsAsc(instrument, interval);
         if (candles.size() < HOLDING_PERIOD_BARS + 2) {
             return List.of();
         }
@@ -56,13 +55,13 @@ public class PatternStatsService {
         OffsetDateTime now = OffsetDateTime.now();
         List<PatternStats> results = new ArrayList<>();
         for (Pattern pattern : patterns) {
-            results.add(computeAndSave(pattern, candles, context, now));
+            results.add(computeAndSave(pattern, instrument, candles, context, now));
         }
         return results;
     }
 
-    private PatternStats computeAndSave(Pattern pattern, List<OhlcvCandle> candles, PatternContext context,
-                                         OffsetDateTime now) {
+    private PatternStats computeAndSave(Pattern pattern, String instrument, List<OhlcvCandle> candles,
+                                         PatternContext context, OffsetDateTime now) {
         int occurrences = 0;
         int wins = 0;
         double movePctSum = 0;
@@ -87,6 +86,7 @@ public class PatternStatsService {
 
         PatternStats stats = PatternStats.builder()
                 .patternId(pattern.id())
+                .instrument(instrument)
                 .windowStart(candles.get(0).getTs().toLocalDate())
                 .windowEnd(candles.get(candles.size() - 1).getTs().toLocalDate())
                 .sampleSize(occurrences)

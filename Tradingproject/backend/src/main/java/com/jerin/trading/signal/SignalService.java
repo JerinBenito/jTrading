@@ -105,7 +105,8 @@ public class SignalService {
                 continue; // already logged this exact pattern+bar (e.g. a manual check overlapping the scheduled job)
             }
 
-            List<PatternStats> history = patternStatsRepository.findByPatternIdOrderByWindowEndDesc(pattern.id());
+            List<PatternStats> history = patternStatsRepository
+                    .findByPatternIdAndInstrumentOrderByWindowEndDesc(pattern.id(), instrument.name());
             if (history.isEmpty()) {
                 continue;
             }

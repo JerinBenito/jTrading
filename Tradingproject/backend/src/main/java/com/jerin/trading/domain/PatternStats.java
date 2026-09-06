@@ -25,6 +25,10 @@ public class PatternStats {
     @Column(name = "pattern_id", length = 50)
     private String patternId;
 
+    @Id
+    @Column(name = "instrument", length = 50)
+    private String instrument;
+
     @Column(name = "window_start", nullable = false)
     private LocalDate windowStart;
 

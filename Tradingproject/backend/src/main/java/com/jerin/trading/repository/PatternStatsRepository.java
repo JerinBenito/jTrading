@@ -8,5 +8,5 @@ import java.util.List;
 
 public interface PatternStatsRepository extends JpaRepository<PatternStats, PatternStatsId> {
 
-    List<PatternStats> findByPatternIdOrderByWindowEndDesc(String patternId);
+    List<PatternStats> findByPatternIdAndInstrumentOrderByWindowEndDesc(String patternId, String instrument);
 }
