@@ -26,6 +26,17 @@ public record IntradayFeatureRow(
         Double volumeSoFarRatio,
         double currentPrice,
         double actualFinalClose,
-        double remainingDriftPct
+        double remainingDriftPct,
+        Double deterministicDeviationPct,
+        Double hmmDeviationPct,
+        Double garchRangeWidthPct,
+        Double pcrLatest,
+        Double globalSp500ChangePct,
+        Double globalCrudeOilChangePct,
+        Double globalUsdInrChangePct,
+        Double fundamentalPe,
+        Double fundamentalRoe,
+        Double recentPatternWinRate,
+        Integer recentPatternDirection
 ) {
 }

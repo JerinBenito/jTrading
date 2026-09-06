@@ -46,10 +46,13 @@ public class MlFeatureSnapshotService {
 
     private final OhlcvCandleRepository candleRepository;
     private final MlFeatureSnapshotRepository snapshotRepository;
+    private final SupplementaryFeatureService supplementaryFeatureService;
 
-    public MlFeatureSnapshotService(OhlcvCandleRepository candleRepository, MlFeatureSnapshotRepository snapshotRepository) {
+    public MlFeatureSnapshotService(OhlcvCandleRepository candleRepository, MlFeatureSnapshotRepository snapshotRepository,
+                                     SupplementaryFeatureService supplementaryFeatureService) {
         this.candleRepository = candleRepository;
         this.snapshotRepository = snapshotRepository;
+        this.supplementaryFeatureService = supplementaryFeatureService;
     }
 
     @Transactional
@@ -66,10 +69,11 @@ public class MlFeatureSnapshotService {
         List<BigDecimal> rsiSeries = RsiCalculator.calculate(closes, RSI_PERIOD);
         List<BigDecimal> atrSeries = AtrCalculator.calculate(daily, ATR_PERIOD);
 
+        SupplementaryFeatureService.Context supplementary = supplementaryFeatureService.contextFor(instrumentTag);
         int minLookback = LOOKBACK_HORIZONS[LOOKBACK_HORIZONS.length - 1];
         int saved = 0;
         for (int i = minLookback; i < daily.size(); i++) {
-            MlFeatureSnapshot snapshot = buildSnapshot(instrumentTag, daily, closes, ema9Series, ema21Series, rsiSeries, atrSeries, i);
+            MlFeatureSnapshot snapshot = buildSnapshot(instrumentTag, daily, closes, ema9Series, ema21Series, rsiSeries, atrSeries, i, supplementary);
             snapshotRepository.save(snapshot);
             saved++;
         }
@@ -79,7 +83,8 @@ public class MlFeatureSnapshotService {
 
     private MlFeatureSnapshot buildSnapshot(String instrumentTag, List<OhlcvCandle> daily, List<BigDecimal> closes,
                                              List<BigDecimal> ema9Series, List<BigDecimal> ema21Series,
-                                             List<BigDecimal> rsiSeries, List<BigDecimal> atrSeries, int i) {
+                                             List<BigDecimal> rsiSeries, List<BigDecimal> atrSeries, int i,
+                                             SupplementaryFeatureService.Context supplementary) {
         OhlcvCandle today = daily.get(i);
         BigDecimal prevClose = closes.get(i - 1);
         BigDecimal close = closes.get(i);
@@ -136,6 +141,20 @@ public class MlFeatureSnapshotService {
             }
         }
 
+        SupplementaryFeatures dayFeatures = supplementary.forDay(
+                today.getTs().atZoneSameInstant(IST).toLocalDate(), today.getOpen());
+        builder.deterministicDeviationPct(toBigDecimal(dayFeatures.deterministicDeviationPct()));
+        builder.hmmDeviationPct(toBigDecimal(dayFeatures.hmmDeviationPct()));
+        builder.garchRangeWidthPct(toBigDecimal(dayFeatures.garchRangeWidthPct()));
+        builder.pcrLatest(toBigDecimal(dayFeatures.pcrLatest()));
+        builder.globalSp500ChangePct(toBigDecimal(dayFeatures.globalSp500ChangePct()));
+        builder.globalCrudeOilChangePct(toBigDecimal(dayFeatures.globalCrudeOilChangePct()));
+        builder.globalUsdInrChangePct(toBigDecimal(dayFeatures.globalUsdInrChangePct()));
+        builder.fundamentalPe(toBigDecimal(dayFeatures.fundamentalPe()));
+        builder.fundamentalRoe(toBigDecimal(dayFeatures.fundamentalRoe()));
+        builder.recentPatternWinRate(toBigDecimal(dayFeatures.recentPatternWinRate()));
+        builder.recentPatternDirection(dayFeatures.recentPatternDirection());
+
         MlFeatureSnapshot snapshot = builder.build();
         Optional<MlFeatureSnapshot> existing = snapshotRepository.findByInstrumentAndTradingDate(instrumentTag, snapshot.getTradingDate());
         existing.ifPresent(e -> snapshot.setId(e.getId()));
@@ -166,6 +185,10 @@ public class MlFeatureSnapshotService {
         }
         return to.subtract(from).divide(from, 6, RoundingMode.HALF_UP)
                 .multiply(BigDecimal.valueOf(100)).setScale(4, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal toBigDecimal(Double value) {
+        return value == null ? null : BigDecimal.valueOf(value).setScale(4, RoundingMode.HALF_UP);
     }
 
     private BigDecimal emaSpreadPct(BigDecimal ema9, BigDecimal ema21, BigDecimal close) {

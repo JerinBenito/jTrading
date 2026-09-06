@@ -19,4 +19,8 @@ public interface OptionChainSnapshotRepository extends JpaRepository<OptionChain
     Optional<OffsetDateTime> findLatestTs(@Param("instrument") String instrument);
 
     List<OptionChainSnapshot> findByInstrumentAndTs(String instrument, OffsetDateTime ts);
+
+    /** Every snapshot row ever taken for this instrument, regardless of expiry — for building a
+     * PCR-over-time series (grouping by ts) rather than a single point-in-time read. */
+    List<OptionChainSnapshot> findByInstrumentOrderByTsAsc(String instrument);
 }

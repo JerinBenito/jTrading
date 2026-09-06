@@ -96,6 +96,32 @@ public class MlFeatureSnapshot {
     @Column(name = "forward_return_40d_pct", precision = 8, scale = 4)
     private BigDecimal forwardReturn40dPct;
 
+    /** Everything else this codebase knows about this instrument on this day — see
+     * {@link SupplementaryFeatures}/{@link SupplementaryFeatureService} for what each of these
+     * means and why most will be null on older rows. */
+    @Column(name = "deterministic_deviation_pct", precision = 10, scale = 4)
+    private BigDecimal deterministicDeviationPct;
+    @Column(name = "hmm_deviation_pct", precision = 10, scale = 4)
+    private BigDecimal hmmDeviationPct;
+    @Column(name = "garch_range_width_pct", precision = 10, scale = 4)
+    private BigDecimal garchRangeWidthPct;
+    @Column(name = "pcr_latest", precision = 10, scale = 4)
+    private BigDecimal pcrLatest;
+    @Column(name = "global_sp500_change_pct", precision = 10, scale = 4)
+    private BigDecimal globalSp500ChangePct;
+    @Column(name = "global_crude_oil_change_pct", precision = 10, scale = 4)
+    private BigDecimal globalCrudeOilChangePct;
+    @Column(name = "global_usd_inr_change_pct", precision = 10, scale = 4)
+    private BigDecimal globalUsdInrChangePct;
+    @Column(name = "fundamental_pe", precision = 10, scale = 4)
+    private BigDecimal fundamentalPe;
+    @Column(name = "fundamental_roe", precision = 10, scale = 4)
+    private BigDecimal fundamentalRoe;
+    @Column(name = "recent_pattern_win_rate", precision = 6, scale = 2)
+    private BigDecimal recentPatternWinRate;
+    @Column(name = "recent_pattern_direction")
+    private Integer recentPatternDirection;
+
     @Column(name = "computed_at", nullable = false)
     private OffsetDateTime computedAt;
 }

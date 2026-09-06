@@ -11,6 +11,7 @@ import com.jerin.trading.repository.OhlcvCandleRepository;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
@@ -36,9 +37,12 @@ public class IntradayFeatureExportService {
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     private final OhlcvCandleRepository candleRepository;
+    private final SupplementaryFeatureService supplementaryFeatureService;
 
-    public IntradayFeatureExportService(OhlcvCandleRepository candleRepository) {
+    public IntradayFeatureExportService(OhlcvCandleRepository candleRepository,
+                                         SupplementaryFeatureService supplementaryFeatureService) {
         this.candleRepository = candleRepository;
+        this.supplementaryFeatureService = supplementaryFeatureService;
     }
 
     public List<IntradayFeatureRow> export(String instrumentTag) {
@@ -47,6 +51,7 @@ public class IntradayFeatureExportService {
         List<BigDecimal> rsi14 = RsiCalculator.calculate(closes, RSI_PERIOD);
         List<BigDecimal> ema9 = EmaCalculator.calculate(closes, EMA_SHORT_PERIOD);
         List<BigDecimal> ema21 = EmaCalculator.calculate(closes, EMA_LONG_PERIOD);
+        SupplementaryFeatureService.Context supplementary = supplementaryFeatureService.contextFor(instrumentTag);
 
         List<List<OhlcvCandle>> days = DailyBarAggregator.groupByDay(hourly);
         List<OhlcvCandle> dailyBars = DailyBarAggregator.aggregate(hourly);
@@ -71,8 +76,10 @@ public class IntradayFeatureExportService {
             double runningLow = Double.POSITIVE_INFINITY;
             long volumeSoFar = 0;
             boolean volumeKnown = true;
-            String tradingDate = today.get(0).getTs().atZoneSameInstant(IST).toLocalDate().toString();
+            LocalDate tradingLocalDate = today.get(0).getTs().atZoneSameInstant(IST).toLocalDate();
+            String tradingDate = tradingLocalDate.toString();
             Double trailingAvgDailyVolume = trailingAvgVolume(dailyBars, i);
+            SupplementaryFeatures dayFeatures = supplementary.forDay(tradingLocalDate, today.get(0).getOpen());
 
             for (int h = 0; h < today.size(); h++) {
                 OhlcvCandle candle = today.get(h);
@@ -122,7 +129,13 @@ public class IntradayFeatureExportService {
                         instrumentTag, tradingDate, h,
                         returnSoFarPct, volatilitySoFarPct, rsiVal.doubleValue(), emaSpreadPct,
                         bodyPct, upperWickPct, lowerWickPct, upCount, volumeSoFarRatio,
-                        currentPrice, actualFinalClose, remainingDriftPct));
+                        currentPrice, actualFinalClose, remainingDriftPct,
+                        dayFeatures.deterministicDeviationPct(), dayFeatures.hmmDeviationPct(),
+                        dayFeatures.garchRangeWidthPct(), dayFeatures.pcrLatest(),
+                        dayFeatures.globalSp500ChangePct(), dayFeatures.globalCrudeOilChangePct(),
+                        dayFeatures.globalUsdInrChangePct(), dayFeatures.fundamentalPe(),
+                        dayFeatures.fundamentalRoe(), dayFeatures.recentPatternWinRate(),
+                        dayFeatures.recentPatternDirection()));
             }
             globalIndex += today.size();
         }
@@ -198,11 +211,20 @@ public class IntradayFeatureExportService {
             }
         }
 
-        String tradingDate = today.get(0).getTs().atZoneSameInstant(IST).toLocalDate().toString();
+        LocalDate tradingLocalDate = today.get(0).getTs().atZoneSameInstant(IST).toLocalDate();
+        String tradingDate = tradingLocalDate.toString();
+        SupplementaryFeatures dayFeatures = supplementaryFeatureService.contextFor(instrumentTag)
+                .forDay(tradingLocalDate, today.get(0).getOpen());
         return Optional.of(new LiveFeatureSnapshot(
                 instrumentTag, tradingDate, h,
                 returnSoFarPct, volatilitySoFarPct, rsiVal.doubleValue(), emaSpreadPct,
-                bodyPct, upperWickPct, lowerWickPct, upCount, volumeSoFarRatio, currentPrice));
+                bodyPct, upperWickPct, lowerWickPct, upCount, volumeSoFarRatio, currentPrice,
+                dayFeatures.deterministicDeviationPct(), dayFeatures.hmmDeviationPct(),
+                dayFeatures.garchRangeWidthPct(), dayFeatures.pcrLatest(),
+                dayFeatures.globalSp500ChangePct(), dayFeatures.globalCrudeOilChangePct(),
+                dayFeatures.globalUsdInrChangePct(), dayFeatures.fundamentalPe(),
+                dayFeatures.fundamentalRoe(), dayFeatures.recentPatternWinRate(),
+                dayFeatures.recentPatternDirection()));
     }
 
     /** Average total daily volume over the {@value #VOLUME_LOOKBACK_DAYS} trading days strictly

@@ -19,6 +19,17 @@ public record LiveFeatureSnapshot(
         double lowerWickPct,
         int last3UpCount,
         Double volumeSoFarRatio,
-        double currentPrice
+        double currentPrice,
+        Double deterministicDeviationPct,
+        Double hmmDeviationPct,
+        Double garchRangeWidthPct,
+        Double pcrLatest,
+        Double globalSp500ChangePct,
+        Double globalCrudeOilChangePct,
+        Double globalUsdInrChangePct,
+        Double fundamentalPe,
+        Double fundamentalRoe,
+        Double recentPatternWinRate,
+        Integer recentPatternDirection
 ) {
 }

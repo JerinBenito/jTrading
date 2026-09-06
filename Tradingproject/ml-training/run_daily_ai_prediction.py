@@ -30,6 +30,15 @@ MODELS_DIR = os.path.join(os.path.dirname(__file__), "models", date.today().isof
 INTRADAY_FEATURES = [
     "hoursSinceOpen", "returnSoFarPct", "volatilitySoFarPct", "rsi14", "emaSpreadPct",
     "bodyPct", "upperWickPct", "lowerWickPct", "last3UpCount", "volumeSoFarRatio",
+    # Supplementary features added 2026-09-06 - the deterministic/HMM/GARCH daily calls, options
+    # PCR, overnight global market context, company fundamentals, and the most recent pattern
+    # signal's track record (see SupplementaryFeatureService). Most of these sources are only
+    # days old, so most historical rows will be NaN here for a while - LightGBM handles that
+    # natively (same as volumeSoFarRatio always has, for the NIFTY/BANKNIFTY index which has no
+    # real volume), it's not a reason to exclude them.
+    "deterministicDeviationPct", "hmmDeviationPct", "garchRangeWidthPct", "pcrLatest",
+    "globalSp500ChangePct", "globalCrudeOilChangePct", "globalUsdInrChangePct",
+    "fundamentalPe", "fundamentalRoe", "recentPatternWinRate", "recentPatternDirection",
 ]
 MULTIDAY_REQUIRED_FEATURES = [
     "dailyReturnPct", "gapFromPrevClosePct", "intradayRangePct",
@@ -37,7 +46,15 @@ MULTIDAY_REQUIRED_FEATURES = [
     "return5dPct", "return10dPct", "return20dPct", "return40dPct",
     "bodyPct", "upperWickPct", "lowerWickPct",
 ]
-MULTIDAY_FEATURES = MULTIDAY_REQUIRED_FEATURES + ["volumeRatio20d"]
+# Deliberately NOT in MULTIDAY_REQUIRED_FEATURES (the dropna filter) - these are frequently null
+# (same treatment volumeRatio20d already got), and requiring them non-null would wipe out nearly
+# the entire training set while these data sources are still young.
+SUPPLEMENTARY_FEATURES = [
+    "volumeRatio20d", "deterministicDeviationPct", "hmmDeviationPct", "garchRangeWidthPct",
+    "pcrLatest", "globalSp500ChangePct", "globalCrudeOilChangePct", "globalUsdInrChangePct",
+    "fundamentalPe", "fundamentalRoe", "recentPatternWinRate", "recentPatternDirection",
+]
+MULTIDAY_FEATURES = MULTIDAY_REQUIRED_FEATURES + SUPPLEMENTARY_FEATURES
 HORIZONS = [5, 10, 20, 40]
 
 
