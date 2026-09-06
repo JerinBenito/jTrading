@@ -13,6 +13,7 @@ import { PredictionCard } from '../../src/components/PredictionCard';
 import { TrajectoryChart } from '../../src/components/TrajectoryChart';
 import { RangeCalibrationRow } from '../../src/components/RangeCalibrationRow';
 import { PredictionComparisonTable } from '../../src/components/PredictionComparisonTable';
+import { GlobalMarketCard } from '../../src/components/GlobalMarketCard';
 import { EmptyState, ErrorState, LoadingState } from '../../src/components/ScreenState';
 
 export default function DashboardScreen() {
@@ -26,6 +27,7 @@ export default function DashboardScreen() {
   const rangeDaily = useApiData(() => api.getRangeCalibration(instrument, '1d'), [instrument]);
   const comparison = useApiData(() => api.getPredictionComparison(instrument), [instrument]);
   const leaderboard = useApiData(() => api.getModelLeaderboard(instrument), [instrument]);
+  const globalMarket = useApiData(() => api.getGlobalMarketLatest(), []);
   const live = useLiveFeed(instrument);
 
   const [manualRefreshing, setManualRefreshing] = useState(false);
@@ -38,6 +40,7 @@ export default function DashboardScreen() {
     rangeDaily.refresh();
     comparison.refresh();
     leaderboard.refresh();
+    globalMarket.refresh();
     setTimeout(() => setManualRefreshing(false), 600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [instrument]);
@@ -59,6 +62,8 @@ export default function DashboardScreen() {
       <ScreenHeader eyebrow={instrument} title="Dashboard" right={<HealthBadge />} />
 
       <InstrumentToggle />
+
+      <GlobalMarketCard snapshots={globalMarket.data ?? []} />
 
       {loading && <LoadingState />}
       {!loading && firstError && <ErrorState message={firstError} onRetry={onRefresh} />}

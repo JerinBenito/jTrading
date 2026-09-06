@@ -2,7 +2,9 @@ import { API_BASE_URL, Instrument } from '../constants/config';
 import type {
   BacktestResult,
   BasketSnapshot,
+  CompanyFundamental,
   DailyTrajectory,
+  GlobalMarketSnapshot,
   HealthStatus,
   IntradayReanchorBacktestResult,
   ModelLeaderboard,
@@ -34,7 +36,9 @@ export const api = {
       `/api/forecast/${instrument}/daily/trajectory${date ? `?date=${date}` : ''}`
     ),
 
-  getSignalHistory: (instrument: Instrument) =>
+  /** `instrument` accepts NIFTY/BANKNIFTY as before, or any NIFTY 50 basket trading symbol —
+   * pattern signals now run for the whole basket, not just the two indices. */
+  getSignalHistory: (instrument: string) =>
     getJson<SignalHistoryEntry[]>(`/api/signals/${instrument}/history`),
 
   getRangeCalibration: (instrument: string, interval: '1h' | '1d') =>
@@ -82,4 +86,12 @@ export const api = {
   /** Which live model has actually been more accurate lately for this instrument, from real recorded outcomes. */
   getModelLeaderboard: (instrument: string) =>
     getJson<ModelLeaderboard>(`/api/predictions-comparison/${instrument}/leaderboard`),
+
+  /** Basket stocks only — NIFTY/BANKNIFTY are indices, not companies, so they have none. */
+  getFundamentals: (symbol: string) =>
+    getJson<CompanyFundamental[]>(`/api/fundamentals/${symbol}`),
+
+  /** Most recent known overnight read per symbol (SP500, DOW, NASDAQ, CRUDE_OIL, USD_INR). */
+  getGlobalMarketLatest: () =>
+    getJson<GlobalMarketSnapshot[]>('/api/global-market/latest'),
 };

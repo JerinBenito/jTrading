@@ -11,6 +11,8 @@ import { TrajectoryChart } from '../../src/components/TrajectoryChart';
 import { BacktestResultTable } from '../../src/components/BacktestResultTable';
 import { IntradayReanchorTable } from '../../src/components/IntradayReanchorTable';
 import { PredictionComparisonTable } from '../../src/components/PredictionComparisonTable';
+import { FundamentalsCard } from '../../src/components/FundamentalsCard';
+import { PatternSignalsSection } from '../../src/components/PatternSignalsSection';
 import { EmptyState, ErrorState, LoadingState } from '../../src/components/ScreenState';
 
 function formatPrice(value: number) {
@@ -27,6 +29,8 @@ export default function StockDetailScreen() {
   const reanchor = useApiData(() => api.getIntradayReanchorBacktest(symbol), [symbol]);
   const comparison = useApiData(() => api.getPredictionComparison(symbol), [symbol]);
   const leaderboard = useApiData(() => api.getModelLeaderboard(symbol), [symbol]);
+  const fundamentals = useApiData(() => api.getFundamentals(symbol), [symbol]);
+  const signals = useApiData(() => api.getSignalHistory(symbol), [symbol]);
   const live = useLiveFeed(symbol);
 
   const [manualRefreshing, setManualRefreshing] = useState(false);
@@ -39,6 +43,8 @@ export default function StockDetailScreen() {
     reanchor.refresh();
     comparison.refresh();
     leaderboard.refresh();
+    fundamentals.refresh();
+    signals.refresh();
     setTimeout(() => setManualRefreshing(false), 600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -114,6 +120,10 @@ export default function StockDetailScreen() {
       )}
 
       <PredictionComparisonTable rows={comparison.data?.rows ?? []} leaderboard={leaderboard.data} />
+
+      <FundamentalsCard ratios={fundamentals.data ?? []} />
+
+      <PatternSignalsSection signals={signals.data ?? []} />
 
       <Text style={styles.sectionLabel}>Analysis — walk-forward, recomputed from {symbol}'s own history</Text>
       {reanchor.data && <IntradayReanchorTable result={reanchor.data} />}

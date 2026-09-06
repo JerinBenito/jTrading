@@ -1,6 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Text, View } from 'react-native';
 import { colors } from '../constants/colors';
+import { Badge } from './ui/Badge';
+import { Card } from './ui/Card';
 import type { ModelLeaderboard, PredictionComparisonRow } from '../api/types';
 
 function formatPrice(value: number | null) {
@@ -30,18 +32,14 @@ export function PredictionComparisonTable({
 }) {
   if (rows.length === 0) {
     return (
-      <View style={styles.card}>
-        <Text style={styles.title}>Model comparison</Text>
+      <Card title="Model comparison">
         <Text style={styles.empty}>No predictions recorded for this day yet.</Text>
-      </View>
+      </Card>
     );
   }
 
   return (
-    <View style={styles.card}>
-      <Text style={styles.title}>Model comparison</Text>
-      <Text style={styles.subtitle}>Every model's call for this day, side by side with what actually happened.</Text>
-
+    <Card title="Model comparison" subtitle="Every model's call for this day, side by side with what actually happened.">
       {leaderboard && leaderboard.sampleSize > 0 && (
         <View style={styles.leaderboard}>
           <Ionicons name="trophy-outline" size={13} color={colors.textSecondary} />
@@ -58,7 +56,7 @@ export function PredictionComparisonTable({
       {rows.map((row, i) => (
         <RowCard key={`${row.source}-${row.label}-${i}`} row={row} />
       ))}
-    </View>
+    </Card>
   );
 }
 
@@ -75,18 +73,17 @@ function RowCard({ row }: { row: PredictionComparisonRow }) {
 
   return (
     <View style={styles.row}>
-      <View style={styles.rowHeader}>
-        <View style={[styles.sourceBadge, { backgroundColor: `${accentColor}22` }]}>
-          <Ionicons name={isAi ? 'sparkles-outline' : 'calculator-outline'} size={11} color={accentColor} />
-          <Text style={[styles.sourceBadgeText, { color: accentColor }]}>{row.source}</Text>
-        </View>
-        <Text style={styles.label}>{row.label}</Text>
-        {isExperimental && (
-          <View style={styles.experimentalBadge}>
-            <Text style={styles.experimentalBadgeText}>NOT VALIDATED</Text>
-          </View>
-        )}
+      {/* Badges on their own line, label on the next — a label of any length can wrap freely
+       * across the full card width without ever squeezing against a badge. */}
+      <View style={styles.badgeRow}>
+        <Badge
+          label={row.source}
+          color={accentColor}
+          icon={<Ionicons name={isAi ? 'sparkles-outline' : 'calculator-outline'} size={11} color={accentColor} />}
+        />
+        {isExperimental && <Badge label="NOT VALIDATED" color={colors.neutral} />}
       </View>
+      <Text style={styles.label}>{row.label}</Text>
 
       <View style={styles.valuesRow}>
         <Value label="Predicted" value={formatPrice(row.predictedPrice)} accent={accentColor} />
@@ -150,25 +147,6 @@ function Value({ label, value, accent }: { label: string; value: string; accent?
 }
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 18,
-    padding: 16,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  title: {
-    color: colors.textPrimary,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  subtitle: {
-    color: colors.textMuted,
-    fontSize: 11,
-    marginTop: -6,
-    lineHeight: 15,
-  },
   empty: {
     color: colors.textMuted,
     fontSize: 12,
@@ -193,41 +171,15 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 8,
   },
-  rowHeader: {
+  badgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-  },
-  sourceBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 7,
-  },
-  sourceBadgeText: {
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.4,
-  },
-  experimentalBadge: {
-    backgroundColor: `${colors.neutral}22`,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  experimentalBadgeText: {
-    color: colors.neutral,
-    fontSize: 8,
-    fontWeight: '800',
-    letterSpacing: 0.3,
+    gap: 6,
   },
   label: {
     color: colors.textPrimary,
     fontSize: 13,
     fontWeight: '600',
-    flexShrink: 1,
   },
   valuesRow: {
     flexDirection: 'row',

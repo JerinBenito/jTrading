@@ -156,3 +156,28 @@ export interface ModelLeaderboard {
   aiWins: number;
   ties: number;
 }
+
+/** One financial ratio's current known value for a basket stock (P/E, P/B, ROA, ROE, ROCE,
+ * EV/EBITDA, Quick Ratio), with a sector benchmark alongside it — from Upstox's own fundamentals
+ * API. Values come through as strings (some are plain numbers, some carry a "%") since that's
+ * the shape the source gives them in. Only ever populated for basket stocks — NIFTY/BANKNIFTY
+ * are indices, not companies. */
+export interface CompanyFundamental {
+  symbol: string;
+  isin: string;
+  ratioName: string;
+  companyValue: string | null;
+  sectorValue: string | null;
+  fetchedAt: string;
+}
+
+/** One overnight global-market read (US indices, crude oil, USD/INR), fetched once daily
+ * shortly before Indian market open. Purely observational — not wired into any prediction yet. */
+export interface GlobalMarketSnapshot {
+  symbol: string;
+  tradingDate: string;
+  fetchedAt: string;
+  price: number;
+  changePct: number | null;
+  previousClose: number | null;
+}
