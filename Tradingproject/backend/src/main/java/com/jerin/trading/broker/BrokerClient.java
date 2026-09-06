@@ -37,4 +37,15 @@ public interface BrokerClient {
 
     /** @return the NSE equity instrument_key for a trading symbol (e.g. "RELIANCE"), if listed */
     Optional<String> findEquityInstrumentKey(String tradingSymbol);
+
+    /** @return the ISIN for a trading symbol (e.g. "RELIANCE" -> "INE002A01018"), if listed —
+     * needed to call the fundamentals endpoints, which are keyed by ISIN, not instrument_key. */
+    Optional<String> findEquityIsin(String tradingSymbol);
+
+    /** Key financial ratios (P/E, P/B, ROA, ROE, ROCE, EV/EBITDA, ...) for a company, each with
+     * a sector benchmark alongside it. */
+    List<KeyRatio> getKeyRatios(String isin);
+
+    record KeyRatio(String name, String companyValue, String sectorValue) {
+    }
 }

@@ -3,6 +3,8 @@ package com.jerin.trading.ingestion;
 import com.jerin.trading.forecast.DailyForecastPredictionService;
 import com.jerin.trading.forecast.DailyHmmPredictionService;
 import com.jerin.trading.forecast.ForecastPredictionService;
+import com.jerin.trading.fundamentals.CompanyFundamentalJob;
+import com.jerin.trading.fundamentals.CompanyFundamentalService;
 import com.jerin.trading.globalmarket.GlobalMarketDataJob;
 import com.jerin.trading.globalmarket.GlobalMarketDataService;
 import com.jerin.trading.ml.AdaptiveSelectionService;
@@ -129,6 +131,31 @@ public class QuartzConfig {
                 .withIdentity("globalMarketDataTrigger")
                 .withSchedule(CronScheduleBuilder
                         .cronSchedule("0 5 9 ? * MON-FRI")
+                        .inTimeZone(TimeZone.getTimeZone("Asia/Kolkata")))
+                .build();
+    }
+
+    @Bean
+    public JobDetail companyFundamentalJobDetail(CompanyFundamentalService companyFundamentalService) {
+        JobDataMap jobDataMap = new JobDataMap();
+        jobDataMap.put("companyFundamentalService", companyFundamentalService);
+        return JobBuilder.newJob(CompanyFundamentalJob.class)
+                .withIdentity("companyFundamentalJob")
+                .usingJobData(jobDataMap)
+                .storeDurably()
+                .build();
+    }
+
+    /** Once daily, 8:00 IST — well before market open. Fundamentals change quarterly at most,
+     * so this is generous, not precision timing; it just needs to run regularly enough to catch
+     * updates without hammering the endpoint. */
+    @Bean
+    public Trigger companyFundamentalTrigger(JobDetail companyFundamentalJobDetail) {
+        return TriggerBuilder.newTrigger()
+                .forJob(companyFundamentalJobDetail)
+                .withIdentity("companyFundamentalTrigger")
+                .withSchedule(CronScheduleBuilder
+                        .cronSchedule("0 0 8 ? * MON-FRI")
                         .inTimeZone(TimeZone.getTimeZone("Asia/Kolkata")))
                 .build();
     }

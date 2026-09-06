@@ -6,6 +6,7 @@ import com.jerin.trading.broker.FuturesContract;
 import com.jerin.trading.broker.OptionChainEntry;
 import com.jerin.trading.broker.upstox.dto.UpstoxCandleResponse;
 import com.jerin.trading.broker.upstox.dto.UpstoxInstrumentSearchResponse;
+import com.jerin.trading.broker.upstox.dto.UpstoxKeyRatiosResponse;
 import com.jerin.trading.broker.upstox.dto.UpstoxOptionChainResponse;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -137,20 +138,17 @@ public class UpstoxBrokerClient implements BrokerClient {
                 .map(row -> new FuturesContract(row.instrumentKey(), row.tradingSymbol(), LocalDate.parse(row.expiry())));
     }
 
-    /** Not part of {@link BrokerClient} yet — a live-verification spike for whether Upstox's
-     * newer Company Fundamentals API suite is real and reachable with our existing token,
-     * before building any actual ingestion around it. Returns the raw response body. */
-    public String getKeyRatiosRaw(String isin) {
-        return restClient.get()
-                .uri(uriBuilder -> uriBuilder
-                        .path("/v2/fundamentals/{isin}/key-ratios")
-                        .build(isin))
-                .retrieve()
-                .body(String.class);
+    @Override
+    public Optional<String> findEquityInstrumentKey(String tradingSymbol) {
+        return searchEquity(tradingSymbol).map(UpstoxInstrumentSearchResponse.Row::instrumentKey);
     }
 
     @Override
-    public Optional<String> findEquityInstrumentKey(String tradingSymbol) {
+    public Optional<String> findEquityIsin(String tradingSymbol) {
+        return searchEquity(tradingSymbol).map(UpstoxInstrumentSearchResponse.Row::isin);
+    }
+
+    private Optional<UpstoxInstrumentSearchResponse.Row> searchEquity(String tradingSymbol) {
         UpstoxInstrumentSearchResponse response = restClient.get()
                 .uri(uriBuilder -> uriBuilder
                         .path("/v2/instruments/search")
@@ -169,7 +167,23 @@ public class UpstoxBrokerClient implements BrokerClient {
         return response.data().stream()
                 .filter(row -> "EQ".equals(row.instrumentType()))
                 .filter(row -> tradingSymbol.equalsIgnoreCase(row.tradingSymbol()))
-                .findFirst()
-                .map(UpstoxInstrumentSearchResponse.Row::instrumentKey);
+                .findFirst();
+    }
+
+    @Override
+    public List<KeyRatio> getKeyRatios(String isin) {
+        UpstoxKeyRatiosResponse response = restClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/v2/fundamentals/{isin}/key-ratios")
+                        .build(isin))
+                .retrieve()
+                .body(UpstoxKeyRatiosResponse.class);
+
+        if (response == null || response.data() == null) {
+            return List.of();
+        }
+        return response.data().stream()
+                .map(row -> new KeyRatio(row.name(), row.companyValue(), row.sectorValue()))
+                .toList();
     }
 }

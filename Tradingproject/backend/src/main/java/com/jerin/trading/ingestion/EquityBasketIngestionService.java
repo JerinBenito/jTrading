@@ -30,9 +30,10 @@ public class EquityBasketIngestionService {
     private final BrokerClient brokerClient;
     private final IngestionService ingestionService;
 
-    /** Equity instrument keys are stable (ISIN-backed), so resolve each symbol at most once per
+    /** Equity instrument keys and ISINs are stable, so resolve each symbol at most once per
      * process lifetime rather than hitting the search endpoint 49 times every single hour. */
     private final Map<String, String> instrumentKeyCache = new ConcurrentHashMap<>();
+    private final Map<String, String> isinCache = new ConcurrentHashMap<>();
 
     public EquityBasketIngestionService(BrokerClient brokerClient, IngestionService ingestionService) {
         this.brokerClient = brokerClient;
@@ -45,6 +46,12 @@ public class EquityBasketIngestionService {
         return resolveInstrumentKey(symbol);
     }
 
+    /** Public wrapper for consumers (e.g. {@link com.jerin.trading.fundamentals.CompanyFundamentalService})
+     * that need a basket stock's ISIN — the fundamentals endpoints are keyed by ISIN, not instrument_key. */
+    public Optional<String> findIsin(String symbol) {
+        return resolveIsin(symbol);
+    }
+
     private Optional<String> resolveInstrumentKey(String symbol) {
         String cached = instrumentKeyCache.get(symbol);
         if (cached != null) {
@@ -52,6 +59,16 @@ public class EquityBasketIngestionService {
         }
         Optional<String> resolved = brokerClient.findEquityInstrumentKey(symbol);
         resolved.ifPresent(key -> instrumentKeyCache.put(symbol, key));
+        return resolved;
+    }
+
+    private Optional<String> resolveIsin(String symbol) {
+        String cached = isinCache.get(symbol);
+        if (cached != null) {
+            return Optional.of(cached);
+        }
+        Optional<String> resolved = brokerClient.findEquityIsin(symbol);
+        resolved.ifPresent(isin -> isinCache.put(symbol, isin));
         return resolved;
     }
 

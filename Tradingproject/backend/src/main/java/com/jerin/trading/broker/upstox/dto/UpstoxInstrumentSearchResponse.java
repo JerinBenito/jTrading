@@ -16,7 +16,8 @@ public record UpstoxInstrumentSearchResponse(String status, List<Row> data) {
             @JsonProperty("instrument_key") String instrumentKey,
             @JsonProperty("trading_symbol") String tradingSymbol,
             @JsonProperty("instrument_type") String instrumentType,
-            @JsonProperty("underlying_symbol") String underlyingSymbol
+            @JsonProperty("underlying_symbol") String underlyingSymbol,
+            String isin
     ) {
     }
 }

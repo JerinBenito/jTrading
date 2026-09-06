@@ -1,6 +1,5 @@
 package com.jerin.trading.ingestion;
 
-import com.jerin.trading.broker.upstox.UpstoxBrokerClient;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 
@@ -20,11 +19,9 @@ public class IngestionController {
     private static final int MAX_HOURLY_WINDOW_DAYS = 89;
 
     private final IngestionService ingestionService;
-    private final UpstoxBrokerClient upstoxBrokerClient;
 
-    public IngestionController(IngestionService ingestionService, UpstoxBrokerClient upstoxBrokerClient) {
+    public IngestionController(IngestionService ingestionService) {
         this.ingestionService = ingestionService;
-        this.upstoxBrokerClient = upstoxBrokerClient;
     }
 
     @PostMapping("/{instrument}/backfill")
@@ -64,11 +61,5 @@ public class IngestionController {
                                             @RequestParam(defaultValue = "current_week") String expiry) {
         int saved = ingestionService.ingestOptionChain(instrument, expiry);
         return Map.of("instrument", instrument.name(), "expiry", expiry, "rowsSaved", saved);
-    }
-
-    /** Temporary verification-only endpoint — see {@link com.jerin.trading.broker.upstox.UpstoxBrokerClient#getKeyRatiosRaw}. */
-    @GetMapping("/fundamentals-spike/{isin}")
-    public String fundamentalsSpike(@PathVariable String isin) {
-        return upstoxBrokerClient.getKeyRatiosRaw(isin);
     }
 }
