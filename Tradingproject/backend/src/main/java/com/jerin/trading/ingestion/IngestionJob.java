@@ -1,6 +1,7 @@
 package com.jerin.trading.ingestion;
 
 import com.jerin.trading.forecast.DailyForecastPredictionService;
+import com.jerin.trading.forecast.DailyGarchPredictionService;
 import com.jerin.trading.forecast.DailyHmmPredictionService;
 import com.jerin.trading.forecast.ForecastPredictionService;
 import com.jerin.trading.ml.AdaptiveSelectionService;
@@ -42,6 +43,7 @@ public class IngestionJob implements Job {
     private AiPredictionService aiPredictionService;
     private AdaptiveSelectionService adaptiveSelectionService;
     private DailyHmmPredictionService dailyHmmPredictionService;
+    private DailyGarchPredictionService dailyGarchPredictionService;
 
     public void setIngestionService(IngestionService ingestionService) {
         this.ingestionService = ingestionService;
@@ -67,6 +69,10 @@ public class IngestionJob implements Job {
         this.dailyHmmPredictionService = dailyHmmPredictionService;
     }
 
+    public void setDailyGarchPredictionService(DailyGarchPredictionService dailyGarchPredictionService) {
+        this.dailyGarchPredictionService = dailyGarchPredictionService;
+    }
+
     public void setSignalService(SignalService signalService) {
         this.signalService = signalService;
     }
@@ -90,12 +96,12 @@ public class IngestionJob implements Job {
                 ingestionService.ingestIntradayCandles(instrument, "hours", 1);
                 ingestionService.ingestOptionChain(instrument, instrument.optionChainExpiry());
 
-                List<SignalResponse> signals = signalService.generateSignals(instrument, INTERVAL);
+                List<SignalResponse> signals = signalService.generateSignals(instrument.name(), INTERVAL);
                 if (!signals.isEmpty()) {
                     log.info("{} signal(s) generated for {}: {}", signals.size(), instrument, signals);
                 }
 
-                int evaluated = outcomeEvaluationService.evaluatePending(instrument, INTERVAL);
+                int evaluated = outcomeEvaluationService.evaluatePending(instrument.name(), INTERVAL);
                 if (evaluated > 0) {
                     log.info("{} outcome(s) evaluated for {}", evaluated, instrument);
                 }
@@ -128,6 +134,16 @@ public class IngestionJob implements Job {
                 } catch (Exception e) {
                     log.error("HMM prediction cycle failed for {}", instrument, e);
                 }
+
+                // GARCH volatility track — mixed backtest result (competitive on BANKNIFTY,
+                // weaker on NIFTY), run live anyway per explicit request; isolated so it can
+                // never affect anything else.
+                try {
+                    dailyGarchPredictionService.evaluatePending(instrument.name());
+                    dailyGarchPredictionService.recordTodayPrediction(instrument.name());
+                } catch (Exception e) {
+                    log.error("GARCH prediction cycle failed for {}", instrument, e);
+                }
             } catch (Exception e) {
                 log.error("Hourly cycle failed for {}", instrument, e);
             }
@@ -146,12 +162,11 @@ public class IngestionJob implements Job {
         // from the core pipeline above: a failure ingesting or forecasting one basket stock must
         // never affect NIFTY/BANKNIFTY's live signals/forecasts, or another basket stock's.
         //
-        // Deliberately NOT the pattern signal engine — PatternStats is keyed by pattern id alone
-        // (no instrument column), so running it against 49 more stocks would corrupt NIFTY/
-        // BANKNIFTY's own win-rate stats. Both hourly_predictions tables (this hourly loop AND
-        // the same-day forecast) have no such issue — genuinely keyed by instrument — which is
-        // what makes both safe to extend here. Hourly forecast added 2026-09-04: previously only
-        // ran for NIFTY/BANKNIFTY despite nothing architecturally preventing basket coverage.
+        // Pattern signal engine added 2026-09-06, after fixing pattern_stats to be genuinely
+        // keyed by (pattern_id, instrument, window_end) — previously it was keyed by pattern id
+        // alone, so running it against 49 more stocks would have corrupted NIFTY/BANKNIFTY's own
+        // win-rate stats. signal_predictions/signal_outcomes were always safe (real instrument
+        // column since V1); pattern_stats was the only blocker.
         try {
             List<EquityIngestionResult> basketResults = equityBasketIngestionService.ingestTodayForBasket();
             for (EquityIngestionResult result : basketResults) {
@@ -180,6 +195,24 @@ public class IngestionJob implements Job {
                     dailyHmmPredictionService.recordTodayPrediction(result.symbol());
                 } catch (Exception e) {
                     log.error("HMM prediction cycle failed for basket stock {}", result.symbol(), e);
+                }
+                try {
+                    dailyGarchPredictionService.evaluatePending(result.symbol());
+                    dailyGarchPredictionService.recordTodayPrediction(result.symbol());
+                } catch (Exception e) {
+                    log.error("GARCH prediction cycle failed for basket stock {}", result.symbol(), e);
+                }
+                try {
+                    List<SignalResponse> basketSignals = signalService.generateSignals(result.symbol(), INTERVAL);
+                    if (!basketSignals.isEmpty()) {
+                        log.info("{} signal(s) generated for {}: {}", basketSignals.size(), result.symbol(), basketSignals);
+                    }
+                    int basketEvaluated = outcomeEvaluationService.evaluatePending(result.symbol(), INTERVAL);
+                    if (basketEvaluated > 0) {
+                        log.info("{} outcome(s) evaluated for {}", basketEvaluated, result.symbol());
+                    }
+                } catch (Exception e) {
+                    log.error("Pattern signal cycle failed for basket stock {}", result.symbol(), e);
                 }
             }
         } catch (Exception e) {

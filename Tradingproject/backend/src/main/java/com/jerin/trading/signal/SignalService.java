@@ -6,7 +6,6 @@ import com.jerin.trading.domain.SignalPrediction;
 import com.jerin.trading.indicator.AtrCalculator;
 import com.jerin.trading.indicator.EmaCalculator;
 import com.jerin.trading.indicator.RsiCalculator;
-import com.jerin.trading.ingestion.Instrument;
 import com.jerin.trading.pattern.Pattern;
 import com.jerin.trading.pattern.PatternContext;
 import com.jerin.trading.pattern.PatternDirection;
@@ -56,8 +55,8 @@ public class SignalService {
     }
 
     /** Past predictions (most recent first) with their outcome if evaluated yet — read-only, triggers nothing. */
-    public List<SignalHistoryEntry> getHistory(Instrument instrument) {
-        return signalPredictionRepository.findByInstrumentOrderByTsDesc(instrument.name()).stream()
+    public List<SignalHistoryEntry> getHistory(String instrument) {
+        return signalPredictionRepository.findByInstrumentOrderByTsDesc(instrument).stream()
                 .map(prediction -> {
                     Optional<SignalOutcome> outcome = signalOutcomeRepository.findByPredictionId(prediction.getId());
                     return new SignalHistoryEntry(
@@ -75,9 +74,9 @@ public class SignalService {
     }
 
     @Transactional
-    public List<SignalResponse> generateSignals(Instrument instrument, String interval) {
+    public List<SignalResponse> generateSignals(String instrument, String interval) {
         List<OhlcvCandle> candles = candleRepository
-                .findTop200ByInstrumentAndIntervalOrderByTsDesc(instrument.name(), interval);
+                .findTop200ByInstrumentAndIntervalOrderByTsDesc(instrument, interval);
         Collections.reverse(candles);
         if (candles.isEmpty()) {
             return List.of();
@@ -101,12 +100,12 @@ public class SignalService {
             }
 
             if (signalPredictionRepository.existsByInstrumentAndPatternIdAndTs(
-                    instrument.name(), pattern.id(), latestCandle.getTs())) {
+                    instrument, pattern.id(), latestCandle.getTs())) {
                 continue; // already logged this exact pattern+bar (e.g. a manual check overlapping the scheduled job)
             }
 
             List<PatternStats> history = patternStatsRepository
-                    .findByPatternIdAndInstrumentOrderByWindowEndDesc(pattern.id(), instrument.name());
+                    .findByPatternIdAndInstrumentOrderByWindowEndDesc(pattern.id(), instrument);
             if (history.isEmpty()) {
                 continue;
             }
@@ -127,7 +126,7 @@ public class SignalService {
             inputsSnapshot.put("patternSampleSize", latestStats.getSampleSize());
 
             SignalPrediction prediction = signalPredictionRepository.save(SignalPrediction.builder()
-                    .instrument(instrument.name())
+                    .instrument(instrument)
                     .ts(latestCandle.getTs())
                     .patternId(pattern.id())
                     .inputsSnapshot(inputsSnapshot)
@@ -139,7 +138,7 @@ public class SignalService {
             BigDecimal range = latestAtr != null ? latestAtr : BigDecimal.ZERO;
             generated.add(new SignalResponse(
                     prediction.getId(),
-                    instrument.name(),
+                    instrument,
                     pattern.id(),
                     prediction.getPredictedDirection(),
                     confidenceTier,

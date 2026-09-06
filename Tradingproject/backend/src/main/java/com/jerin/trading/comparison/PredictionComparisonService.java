@@ -31,6 +31,7 @@ public class PredictionComparisonService {
 
     private static final String DAILY_INTERVAL = "1d";
     private static final String HMM_INTERVAL = "1d_hmm";
+    private static final String GARCH_INTERVAL = "1d_garch";
     private static final String HOURLY_INTERVAL = "1h";
     private static final String INTRADAY_HORIZON = "INTRADAY";
     private static final String ADAPTIVE_HORIZON = "INTRADAY_ADAPTIVE";
@@ -68,6 +69,7 @@ public class PredictionComparisonService {
 
         addDeterministicRow(instrument, targetDate, dayCandles, currentPrice, rows);
         addHmmRow(instrument, targetDate, dayCandles, currentPrice, rows);
+        addGarchRow(instrument, targetDate, dayCandles, currentPrice, rows);
         addHourlyRows(instrument, dayCandles, rows);
 
         aiPredictionRepository.findByInstrumentAndHorizonAndTargetDate(instrument, INTRADAY_HORIZON, targetDate)
@@ -123,6 +125,19 @@ public class PredictionComparisonService {
         }
         hourlyPredictionRepository.findByInstrumentAndIntervalAndPredictedForTs(instrument, HMM_INTERVAL, dayCandles.get(0).getTs())
                 .ifPresent(p -> rows.add(toDeterministicRow(p, "HMM regime (unvalidated)", targetDate, currentPrice)));
+    }
+
+    /** NOT validated — mixed backtest result (see DailyGarchVolatilityModel's javadoc: genuinely
+     * competitive range calibration on BANKNIFTY, weaker on NIFTY), kept running live anyway per
+     * explicit request. Its predicted price is intentionally identical to the deterministic
+     * row's — GARCH forecasts volatility, not direction — the real signal here is in the range. */
+    private void addGarchRow(String instrument, LocalDate targetDate, List<OhlcvCandle> dayCandles,
+                              BigDecimal currentPrice, List<PredictionComparisonRow> rows) {
+        if (dayCandles.isEmpty()) {
+            return;
+        }
+        hourlyPredictionRepository.findByInstrumentAndIntervalAndPredictedForTs(instrument, GARCH_INTERVAL, dayCandles.get(0).getTs())
+                .ifPresent(p -> rows.add(toDeterministicRow(p, "GARCH volatility (unvalidated)", targetDate, currentPrice)));
     }
 
     /** One row per hour so far today from the original rolling hourly-forecast model — its

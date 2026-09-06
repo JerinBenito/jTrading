@@ -3,7 +3,6 @@ package com.jerin.trading.signal;
 import com.jerin.trading.domain.OhlcvCandle;
 import com.jerin.trading.domain.SignalOutcome;
 import com.jerin.trading.domain.SignalPrediction;
-import com.jerin.trading.ingestion.Instrument;
 import com.jerin.trading.pattern.PatternStatsService;
 import com.jerin.trading.repository.OhlcvCandleRepository;
 import com.jerin.trading.repository.SignalOutcomeRepository;
@@ -38,9 +37,9 @@ public class OutcomeEvaluationService {
     }
 
     @Transactional
-    public int evaluatePending(Instrument instrument, String interval) {
-        List<SignalPrediction> predictions = predictionRepository.findByInstrumentOrderByTsDesc(instrument.name());
-        List<OhlcvCandle> candles = candleRepository.findByInstrumentAndIntervalOrderByTsAsc(instrument.name(), interval);
+    public int evaluatePending(String instrument, String interval) {
+        List<SignalPrediction> predictions = predictionRepository.findByInstrumentOrderByTsDesc(instrument);
+        List<OhlcvCandle> candles = candleRepository.findByInstrumentAndIntervalOrderByTsAsc(instrument, interval);
 
         Map<OffsetDateTime, Integer> tsToIndex = new HashMap<>();
         for (int i = 0; i < candles.size(); i++) {
