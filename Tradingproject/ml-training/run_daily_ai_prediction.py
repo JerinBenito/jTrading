@@ -72,10 +72,12 @@ def get_json(path):
 
 
 def post_json(path, payload):
+    # /api/ml/features/backfill-all alone measured ~2m11s for all 52 instruments;
+    # 30s was too short and caused a real TimeoutError in production (2026-09-07).
     data = json.dumps(payload).encode()
     req = urllib.request.Request(f"{API_BASE}{path}", data=data,
                                   headers={"Content-Type": "application/json"}, method="POST")
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    with urllib.request.urlopen(req, timeout=300) as resp:
         return json.loads(resp.read())
 
 
