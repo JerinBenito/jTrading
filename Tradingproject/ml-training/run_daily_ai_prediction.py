@@ -156,6 +156,16 @@ def run_intraday_predictions(model, symbols):
 
 
 def train_multiday_models_per_symbol(symbols):
+    # ml_feature_snapshots is never refreshed automatically (deliberately manual - see
+    # MlFeatureSnapshotController) - without this, training silently anchors off whatever day
+    # someone last happened to backfill, which can be days stale (caught 2026-09-07: a Sunday
+    # backfill meant Monday's multi-day predictions were still anchored to the prior Friday).
+    # Recomputing here means every run - not just a manually-remembered one - anchors off today.
+    print("Refreshing ml_feature_snapshots before training...")
+    backfill_result = post_json("/api/ml/features/backfill-all", {})
+    print(f"  refreshed {backfill_result['instrumentsProcessed']} instruments, "
+          f"{backfill_result['totalRowsWritten']} rows written")
+
     print("\nDownloading multi-day feature data...")
     all_rows = []
     for sym in symbols:
