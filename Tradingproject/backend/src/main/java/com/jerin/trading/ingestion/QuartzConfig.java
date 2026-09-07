@@ -96,18 +96,23 @@ public class QuartzConfig {
     }
 
     /**
-     * Triggers the Daily AI Prediction workflow at a precise time via workflow_dispatch — see
+     * Triggers the Daily AI Prediction workflow via workflow_dispatch — see
      * {@link GithubActionsDispatchService} for why this replaced relying on GitHub's own
      * schedule: cron (observed running hours late).
      *
-     * 10:10 IST, not 9:25 — found 2026-09-07 (the first real trading day this ran against live
-     * data): the hourly ingestionJobTrigger's first cycle each day fires at 9:00 IST, before
-     * market open (9:15), so it ingests nothing; the day's actual first candle isn't ingested
-     * until the 10:00 IST cycle. A 9:25 dispatch therefore ran with zero candles for today,
-     * silently submitted no same-day prediction, and "succeeded" at doing nothing — that day's
-     * real prediction only landed hours later, from GitHub's own flaky schedule: cron finally
-     * firing well into the afternoon. 10:10 gives the 10:00 cycle time to finish across the
-     * full 52-instrument basket before the script looks for live feature data.
+     * Fires at :10 past every hour, 10 AM through 3 PM IST — not once. Found 2026-09-07 (the
+     * first real trading day this ran against live data): a single 9:25 firing ran before the
+     * day's first candle even existed (the hourly ingestionJobTrigger's 9:00 IST cycle runs
+     * before market open at 9:15, so the actual first candle isn't ingested until the 10:00
+     * cycle), so it silently submitted nothing. Fixed that timing, then went further per an
+     * explicit request: the intraday model was already trained on hoursSinceOpen/returnSoFarPct/
+     * etc. specifically so it CAN refine its same-day-close call as more of the day's real price
+     * action becomes available — it was just never being re-invoked to actually do that. Each
+     * hourly firing re-predicts (not retrains) from a fresher live feature snapshot, upserting
+     * the same day's INTRADAY row with a genuinely more-informed call — not a re-anchor to the
+     * raw current price the way the deterministic model's live estimate works, an actual
+     * re-prediction from the model. Multi-day predictions still only run once (see
+     * already_ran_multiday_today() in the script) since their features don't change intraday.
      */
     @Bean
     public Trigger githubDispatchTrigger(JobDetail githubDispatchJobDetail) {
@@ -115,7 +120,7 @@ public class QuartzConfig {
                 .forJob(githubDispatchJobDetail)
                 .withIdentity("githubDispatchTrigger")
                 .withSchedule(CronScheduleBuilder
-                        .cronSchedule("0 10 10 ? * MON-FRI")
+                        .cronSchedule("0 10 10-15 ? * MON-FRI")
                         .inTimeZone(TimeZone.getTimeZone("Asia/Kolkata")))
                 .build();
     }

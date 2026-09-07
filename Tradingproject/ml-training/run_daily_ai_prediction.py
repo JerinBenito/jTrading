@@ -1,7 +1,15 @@
-"""Generates today's live AI predictions (intraday close + 5/10/20/40-day forward return) for
-every instrument and submits them to the backend's ai_predictions ledger. Meant to run once a
-day (ideally near/after market open for the intraday call, any time after that for the multi-day
-calls since they're based on the latest complete daily snapshot).
+"""Generates live AI predictions (intraday close + 5/10/20/40-day forward return) for every
+instrument and submits them to the backend's ai_predictions ledger.
+
+Multi-day predictions only need to run once a day (their features/target don't change
+intraday). The intraday same-day-close prediction is deliberately different: it's meant to run
+several times through the trading session (see QuartzConfig's dispatch schedule, 10:10 IST
+through market close), each run re-predicting from a fresh live feature snapshot that includes
+more of today's actual price action than the last run had - genuinely refining today's call
+with newer information as the day progresses, rather than locking in one static prediction at
+market open. Retraining is cheap (seconds, same historical data each time) - what changes
+between runs is the live snapshot fed to the trained model at inference time, not the model
+itself.
 
 Trains on ALL available history each run (not held out - the point here is live deployment, not
 another accuracy measurement; accuracy is what the live ledger itself measures going forward, via
@@ -76,15 +84,18 @@ def get_symbols():
     return [row["symbol"] for row in basket]
 
 
-def already_ran_today():
-    """GitHub Actions scheduled runs are best-effort, not guaranteed-on-time - the workflow fires
-    several times in a morning window as a safety net against delay. This makes a redundant later
-    firing a cheap no-op instead of overwriting an earlier, more meaningful intraday prediction
-    with one made near market close."""
+def already_ran_multiday_today():
+    """The multi-day (5/10/20/40-day forward) models don't benefit from re-running intraday -
+    their features and targets don't change until tomorrow's daily bar closes - so these only
+    need one real run per day. The intraday model is deliberately NOT gated by this: it's meant
+    to be re-run several times through the trading session (see QuartzConfig's dispatch
+    schedule), each time refining today's prediction with more of today's actual price action
+    baked into the live feature snapshot, rather than locking in one static call at market
+    open and never looking at the rest of the day."""
     live = get_json("/api/ml/intraday-features/NIFTY/live")
     if live is None:
         return False
-    existing = get_json("/api/ai-predictions/NIFTY?horizon=INTRADAY")
+    existing = get_json("/api/ai-predictions/NIFTY?horizon=FORWARD_5D")
     return bool(existing) and existing[0]["targetDate"] == live["tradingDate"]
 
 
@@ -113,18 +124,16 @@ def train_intraday_model():
 
 
 def run_intraday_predictions(model, symbols):
+    """Deliberately overwrites today's existing INTRADAY prediction every time this runs (the
+    backend upserts by instrument+horizon+day) rather than skipping if one already exists - a
+    later call in the same day means a fresher live snapshot with more of today's actual price
+    action in it, which is strictly more informative than the earlier call, not a risk of
+    clobbering something better."""
     print("\nGenerating live intraday predictions...")
     submitted, skipped = 0, 0
     for sym in symbols:
         live = get_json(f"/api/ml/intraday-features/{urllib.parse.quote(sym)}/live")
         if live is None:
-            continue
-
-        # Per-symbol safety net matching already_ran_today()'s NIFTY-based check - if this
-        # specific symbol already has today's prediction (e.g. a partial earlier run), don't
-        # clobber it with a later, less meaningful one.
-        existing = get_json(f"/api/ai-predictions/{urllib.parse.quote(sym)}?horizon=INTRADAY")
-        if existing and existing[0]["targetDate"] == live["tradingDate"]:
             skipped += 1
             continue
 
@@ -143,7 +152,7 @@ def run_intraday_predictions(model, symbols):
             "targetDate": live["tradingDate"],
         })
         submitted += 1
-    print(f"  submitted {submitted} intraday predictions, skipped {skipped} (already had today's)")
+    print(f"  submitted {submitted} intraday predictions, skipped {skipped} (no live data yet)")
 
 
 def train_multiday_models_per_symbol(symbols):
@@ -210,21 +219,24 @@ if __name__ == "__main__":
     print("NOTE: offline validation found no edge over baseline for this model. This run starts")
     print("the live, honest track record it will be judged on - not a claim it works.\n")
 
-    if already_ran_today():
-        print("NIFTY already has today's INTRADAY prediction - this is a redundant safety-net "
-              "firing (GitHub's scheduled runs are best-effort, not guaranteed-on-time). Skipping "
-              "the expensive training/prediction steps entirely rather than risk overwriting an "
-              "earlier, more meaningful prediction with a late one.")
-        raise SystemExit(0)
-
     symbols = get_symbols()
     print(f"{len(symbols)} instruments: {','.join(symbols)}")
 
+    # Intraday: always refreshed, every time this script runs (see QuartzConfig - dispatched
+    # several times through the trading session, not just once near open). Each run re-trains
+    # on the same historical data (cheap, seconds-scale) but predicts from a fresh live feature
+    # snapshot that includes more of today's actual price action than the last run had -
+    # genuinely re-predicting from newer information, not just re-anchoring the point estimate
+    # to the current price the way the deterministic model does.
     intraday_model = train_intraday_model()
     run_intraday_predictions(intraday_model, symbols)
 
-    df, multiday_models, baselines = train_multiday_models_per_symbol(symbols)
-    run_multiday_predictions(df, multiday_models, baselines, symbols)
+    # Multi-day: only needs one real run per day - its features/target don't change intraday.
+    if already_ran_multiday_today():
+        print("\nMulti-day models already ran today - skipping (today's intraday refresh above still happened).")
+    else:
+        df, multiday_models, baselines = train_multiday_models_per_symbol(symbols)
+        run_multiday_predictions(df, multiday_models, baselines, symbols)
 
     print("\nDone. Evaluate pending predictions later via POST /api/ai-predictions/evaluate-all")
     print("(already wired into the hourly job automatically).")
