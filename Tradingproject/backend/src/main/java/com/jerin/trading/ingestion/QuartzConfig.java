@@ -98,7 +98,16 @@ public class QuartzConfig {
     /**
      * Triggers the Daily AI Prediction workflow at a precise time via workflow_dispatch — see
      * {@link GithubActionsDispatchService} for why this replaced relying on GitHub's own
-     * schedule: cron (observed running hours late). 9:25 IST, shortly after market open.
+     * schedule: cron (observed running hours late).
+     *
+     * 10:10 IST, not 9:25 — found 2026-09-07 (the first real trading day this ran against live
+     * data): the hourly ingestionJobTrigger's first cycle each day fires at 9:00 IST, before
+     * market open (9:15), so it ingests nothing; the day's actual first candle isn't ingested
+     * until the 10:00 IST cycle. A 9:25 dispatch therefore ran with zero candles for today,
+     * silently submitted no same-day prediction, and "succeeded" at doing nothing — that day's
+     * real prediction only landed hours later, from GitHub's own flaky schedule: cron finally
+     * firing well into the afternoon. 10:10 gives the 10:00 cycle time to finish across the
+     * full 52-instrument basket before the script looks for live feature data.
      */
     @Bean
     public Trigger githubDispatchTrigger(JobDetail githubDispatchJobDetail) {
@@ -106,7 +115,7 @@ public class QuartzConfig {
                 .forJob(githubDispatchJobDetail)
                 .withIdentity("githubDispatchTrigger")
                 .withSchedule(CronScheduleBuilder
-                        .cronSchedule("0 25 9 ? * MON-FRI")
+                        .cronSchedule("0 10 10 ? * MON-FRI")
                         .inTimeZone(TimeZone.getTimeZone("Asia/Kolkata")))
                 .build();
     }
