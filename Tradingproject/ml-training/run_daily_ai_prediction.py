@@ -169,6 +169,12 @@ def train_multiday_models_per_symbol(symbols):
     for h in HORIZONS:
         target = f"forwardReturn{h}dPct"
         sub = df.dropna(subset=MULTIDAY_REQUIRED_FEATURES + [target]).copy()
+        # The supplementary features (deterministicDeviationPct, hmmDeviationPct, ...) are new
+        # and mostly/entirely null across historical rows, which makes pandas infer dtype
+        # "object" for those columns rather than float64 - LightGBM rejects object dtypes
+        # outright. Coerce explicitly; NaN is fine (LightGBM handles missing values natively),
+        # "object" is not.
+        sub[MULTIDAY_FEATURES] = sub[MULTIDAY_FEATURES].apply(pd.to_numeric, errors="coerce")
         model = LGBMRegressor(n_estimators=200, max_depth=4, learning_rate=0.03,
                                subsample=0.8, colsample_bytree=0.8, random_state=42, verbosity=-1)
         model.fit(sub[MULTIDAY_FEATURES], sub[target])
