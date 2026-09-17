@@ -37,6 +37,9 @@ public record IntradayFeatureRow(
         Double fundamentalPe,
         Double fundamentalRoe,
         Double recentPatternWinRate,
-        Integer recentPatternDirection
+        Integer recentPatternDirection,
+        Double aiPriorDayErrorPct,
+        Integer aiPriorDayDirectionCorrect,
+        Double aiPriorDayRevisionGradientPct
 ) {
 }

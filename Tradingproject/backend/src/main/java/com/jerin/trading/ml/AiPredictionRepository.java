@@ -20,4 +20,10 @@ public interface AiPredictionRepository extends JpaRepository<AiPrediction, Long
     @Query("select p from AiPrediction p where p.instrument = :instrument and p.horizon = :horizon "
             + "and p.actualValue is not null order by p.targetDate desc")
     List<AiPrediction> findRecentEvaluated(@Param("instrument") String instrument, @Param("horizon") String horizon);
+
+    /** Every evaluated prediction for one instrument+horizon, oldest first — the raw material for
+     * {@link SupplementaryFeatureService}'s "AI's own prior-day error" feature. */
+    @Query("select p from AiPrediction p where p.instrument = :instrument and p.horizon = :horizon "
+            + "and p.actualValue is not null order by p.targetDate asc")
+    List<AiPrediction> findAllEvaluatedOrderByTargetDateAsc(@Param("instrument") String instrument, @Param("horizon") String horizon);
 }

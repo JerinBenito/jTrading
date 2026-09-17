@@ -41,22 +41,30 @@ public class SupplementaryFeatureService {
     private static final String GARCH_INTERVAL = "1d_garch";
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
+    private static final String AI_INTRADAY_HORIZON = "INTRADAY";
+
     private final HourlyPredictionRepository hourlyPredictionRepository;
     private final OptionChainSnapshotRepository optionChainSnapshotRepository;
     private final GlobalMarketSnapshotRepository globalMarketSnapshotRepository;
     private final CompanyFundamentalRepository companyFundamentalRepository;
     private final SignalPredictionRepository signalPredictionRepository;
+    private final AiPredictionRepository aiPredictionRepository;
+    private final AiPredictionSnapshotRepository aiPredictionSnapshotRepository;
 
     public SupplementaryFeatureService(HourlyPredictionRepository hourlyPredictionRepository,
                                         OptionChainSnapshotRepository optionChainSnapshotRepository,
                                         GlobalMarketSnapshotRepository globalMarketSnapshotRepository,
                                         CompanyFundamentalRepository companyFundamentalRepository,
-                                        SignalPredictionRepository signalPredictionRepository) {
+                                        SignalPredictionRepository signalPredictionRepository,
+                                        AiPredictionRepository aiPredictionRepository,
+                                        AiPredictionSnapshotRepository aiPredictionSnapshotRepository) {
         this.hourlyPredictionRepository = hourlyPredictionRepository;
         this.optionChainSnapshotRepository = optionChainSnapshotRepository;
         this.globalMarketSnapshotRepository = globalMarketSnapshotRepository;
         this.companyFundamentalRepository = companyFundamentalRepository;
         this.signalPredictionRepository = signalPredictionRepository;
+        this.aiPredictionRepository = aiPredictionRepository;
+        this.aiPredictionSnapshotRepository = aiPredictionSnapshotRepository;
     }
 
     public Context contextFor(String instrument) {
@@ -70,7 +78,54 @@ public class SupplementaryFeatureService {
                 globalChangeByDay("USD_INR"),
                 fundamentalValue(instrument, "P/E"),
                 fundamentalValue(instrument, "ROE"),
-                mostRecentSignalByDay(instrument));
+                mostRecentSignalByDay(instrument),
+                aiErrorByDay(instrument),
+                aiRevisionGradientByDay(instrument));
+    }
+
+    /** The AI's own realized error, keyed by target_date — {@link Context#forDay} looks this up
+     * with {@code lowerEntry} (strictly before), never {@code floorEntry}, since a day's own
+     * outcome isn't knowable at the moment it's being predicted. */
+    private record AiErrorInfo(double errorPct, int directionCorrect) {
+    }
+
+    private NavigableMap<LocalDate, AiErrorInfo> aiErrorByDay(String instrument) {
+        NavigableMap<LocalDate, AiErrorInfo> result = new TreeMap<>();
+        for (AiPrediction p : aiPredictionRepository.findAllEvaluatedOrderByTargetDateAsc(instrument, AI_INTRADAY_HORIZON)) {
+            if (p.getActualPrice() == null || p.getActualPrice().compareTo(BigDecimal.ZERO) == 0
+                    || p.getAiErrorAbs() == null || p.getDirectionCorrect() == null) {
+                continue;
+            }
+            double errorPct = p.getAiErrorAbs().divide(p.getActualPrice(), 6, RoundingMode.HALF_UP)
+                    .multiply(BigDecimal.valueOf(100)).doubleValue();
+            result.put(p.getTargetDate(), new AiErrorInfo(errorPct, Boolean.TRUE.equals(p.getDirectionCorrect()) ? 1 : 0));
+        }
+        return result;
+    }
+
+    /** How far the AI's own prediction moved from its first to its last call, per target_date,
+     * as % of the last call's value. Same "strictly before" lookup rule as {@link #aiErrorByDay}. */
+    private NavigableMap<LocalDate, Double> aiRevisionGradientByDay(String instrument) {
+        NavigableMap<LocalDate, AiPredictionSnapshot> firstByDay = new TreeMap<>();
+        NavigableMap<LocalDate, AiPredictionSnapshot> lastByDay = new TreeMap<>();
+        for (AiPredictionSnapshot s : aiPredictionSnapshotRepository
+                .findByInstrumentAndHorizonOrderByTargetDateAscPredictedAtTsAsc(instrument, AI_INTRADAY_HORIZON)) {
+            firstByDay.putIfAbsent(s.getTargetDate(), s); // ascending order: first seen per day is the earliest call
+            lastByDay.put(s.getTargetDate(), s); // ascending order: last write per day is the latest call
+        }
+        NavigableMap<LocalDate, Double> result = new TreeMap<>();
+        for (Map.Entry<LocalDate, AiPredictionSnapshot> entry : firstByDay.entrySet()) {
+            AiPredictionSnapshot first = entry.getValue();
+            AiPredictionSnapshot last = lastByDay.get(entry.getKey());
+            if (last == null || last.getPredictedValue().compareTo(BigDecimal.ZERO) == 0) {
+                continue;
+            }
+            double gradientPct = last.getPredictedValue().subtract(first.getPredictedValue()).abs()
+                    .divide(last.getPredictedValue(), 6, RoundingMode.HALF_UP)
+                    .multiply(BigDecimal.valueOf(100)).doubleValue();
+            result.put(entry.getKey(), gradientPct);
+        }
+        return result;
     }
 
     public static final class Context {
@@ -84,6 +139,8 @@ public class SupplementaryFeatureService {
         private final Double fundamentalPe;
         private final Double fundamentalRoe;
         private final NavigableMap<LocalDate, SignalPrediction> patternByDay;
+        private final NavigableMap<LocalDate, AiErrorInfo> aiErrorByDay;
+        private final NavigableMap<LocalDate, Double> aiRevisionGradientByDay;
 
         private Context(Map<LocalDate, HourlyPrediction> deterministicByDay,
                          Map<LocalDate, HourlyPrediction> hmmByDay,
@@ -93,7 +150,9 @@ public class SupplementaryFeatureService {
                          NavigableMap<LocalDate, Double> crudeOilByDay,
                          NavigableMap<LocalDate, Double> usdInrByDay,
                          Double fundamentalPe, Double fundamentalRoe,
-                         NavigableMap<LocalDate, SignalPrediction> patternByDay) {
+                         NavigableMap<LocalDate, SignalPrediction> patternByDay,
+                         NavigableMap<LocalDate, AiErrorInfo> aiErrorByDay,
+                         NavigableMap<LocalDate, Double> aiRevisionGradientByDay) {
             this.deterministicByDay = deterministicByDay;
             this.hmmByDay = hmmByDay;
             this.garchByDay = garchByDay;
@@ -104,6 +163,8 @@ public class SupplementaryFeatureService {
             this.fundamentalPe = fundamentalPe;
             this.fundamentalRoe = fundamentalRoe;
             this.patternByDay = patternByDay;
+            this.aiErrorByDay = aiErrorByDay;
+            this.aiRevisionGradientByDay = aiRevisionGradientByDay;
         }
 
         public SupplementaryFeatures forDay(LocalDate day, BigDecimal dayOpen) {
@@ -119,6 +180,14 @@ public class SupplementaryFeatureService {
                 patternDirection = "up".equals(p.getPredictedDirection()) ? 1 : -1;
             }
 
+            // Strictly before `day` — unlike the other lookups above, this one must never see the
+            // day's own outcome, since that isn't knowable at the moment `day` is being predicted.
+            Map.Entry<LocalDate, AiErrorInfo> priorError = aiErrorByDay.lowerEntry(day);
+            Double aiPriorDayErrorPct = priorError != null ? priorError.getValue().errorPct() : null;
+            Integer aiPriorDayDirectionCorrect = priorError != null ? priorError.getValue().directionCorrect() : null;
+            Map.Entry<LocalDate, Double> priorGradient = aiRevisionGradientByDay.lowerEntry(day);
+            Double aiPriorDayRevisionGradientPct = priorGradient != null ? priorGradient.getValue() : null;
+
             return new SupplementaryFeatures(
                     deviationPct(deterministicByDay.get(day), dayOpen),
                     deviationPct(hmmByDay.get(day), dayOpen),
@@ -130,7 +199,10 @@ public class SupplementaryFeatureService {
                     fundamentalPe,
                     fundamentalRoe,
                     patternWinRate,
-                    patternDirection);
+                    patternDirection,
+                    aiPriorDayErrorPct,
+                    aiPriorDayDirectionCorrect,
+                    aiPriorDayRevisionGradientPct);
         }
 
         private static Double deviationPct(HourlyPrediction prediction, BigDecimal dayOpen) {

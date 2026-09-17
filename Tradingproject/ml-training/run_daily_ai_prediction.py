@@ -47,6 +47,14 @@ INTRADAY_FEATURES = [
     "deterministicDeviationPct", "hmmDeviationPct", "garchRangeWidthPct", "pcrLatest",
     "globalSp500ChangePct", "globalCrudeOilChangePct", "globalUsdInrChangePct",
     "fundamentalPe", "fundamentalRoe", "recentPatternWinRate", "recentPatternDirection",
+    # Added 2026-09-17, per an explicit request that the model see its own recent error rather
+    # than only market data - the way an ARIMA model's moving-average term uses past forecast
+    # errors. All three describe the PRIOR day (strictly before the one being predicted, computed
+    # server-side in SupplementaryFeatureService) - null until at least one prior day has been
+    # evaluated, and null entirely for any instrument/day before this field started being
+    # recorded (2026-09-17), so expect heavy NaN for a while, same treatment as every other
+    # supplementary feature above.
+    "aiPriorDayErrorPct", "aiPriorDayDirectionCorrect", "aiPriorDayRevisionGradientPct",
 ]
 MULTIDAY_REQUIRED_FEATURES = [
     "dailyReturnPct", "gapFromPrevClosePct", "intradayRangePct",
@@ -117,6 +125,10 @@ def train_intraday_model():
     print("Training intraday model on full history...")
     rows = get_json("/api/ml/intraday-features/all")
     df = pd.DataFrame(rows)
+    # aiPriorDay* (added 2026-09-17) is 100% null for every row before that date - with no
+    # non-null value anywhere to infer from, pandas types an all-null column as object, which
+    # LightGBM rejects outright (same class of bug already hit and fixed on the multi-day path).
+    df[INTRADAY_FEATURES] = df[INTRADAY_FEATURES].apply(pd.to_numeric, errors="coerce")
     model = LGBMRegressor(n_estimators=300, max_depth=5, learning_rate=0.03,
                            subsample=0.8, colsample_bytree=0.8, random_state=42, verbosity=-1)
     model.fit(df[INTRADAY_FEATURES], df["remainingDriftPct"])

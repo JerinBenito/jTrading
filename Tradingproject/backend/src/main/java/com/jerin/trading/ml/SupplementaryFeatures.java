@@ -40,8 +40,24 @@ public record SupplementaryFeatures(
          * captured exactly what was known at the moment that signal fired. Direction is +1 for
          * "up", -1 for "down", null if no pattern has ever fired yet for this instrument. */
         Double recentPatternWinRate,
-        Integer recentPatternDirection
+        Integer recentPatternDirection,
+        /** How wrong the AI's own INTRADAY prediction was on the most recent day STRICTLY before
+         * this one that's already been evaluated (as % of that day's actual close) — added
+         * 2026-09-17 per an explicit request that the model see its own recent error, the way an
+         * ARIMA model's moving-average term uses past forecast errors. Deliberately excludes the
+         * day itself: at prediction time its own outcome isn't knowable yet, only what happened
+         * before it. Null until at least one prior day has been evaluated. */
+        Double aiPriorDayErrorPct,
+        /** Whether that same prior-day prediction got the direction right, as 1/0 rather than a
+         * boolean for LightGBM's benefit — null under the same conditions as the error above. */
+        Integer aiPriorDayDirectionCorrect,
+        /** How far the AI's own prediction moved between its first and last call on that same
+         * prior day, as % of the last call's value — the "revision gradient" this feature set is
+         * named after. Large values mean the AI was still substantially revising its view late
+         * in the day; near-zero means it settled early. Null until a prior day has both a first
+         * and a last recorded snapshot. */
+        Double aiPriorDayRevisionGradientPct
 ) {
     static final SupplementaryFeatures EMPTY = new SupplementaryFeatures(
-            null, null, null, null, null, null, null, null, null, null, null);
+            null, null, null, null, null, null, null, null, null, null, null, null, null, null);
 }
