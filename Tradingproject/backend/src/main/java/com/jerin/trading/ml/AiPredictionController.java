@@ -59,4 +59,13 @@ public class AiPredictionController {
                                             @RequestParam(defaultValue = "20") int window) {
         return predictionService.rollingAccuracy(instrument, horizon, window);
     }
+
+    /** The fair version of {@link #rollingAccuracy} for a re-predicted horizon like INTRADAY —
+     * scores the day's FIRST call instead of whichever call was latest when evaluated. See
+     * {@link FirstCallRollingAccuracy}. */
+    @GetMapping("/{instrument}/rolling-accuracy-first-call")
+    public FirstCallRollingAccuracy firstCallRollingAccuracy(@PathVariable String instrument, @RequestParam String horizon,
+                                                               @RequestParam(defaultValue = "20") int window) {
+        return predictionService.firstCallRollingAccuracy(instrument, horizon, window);
+    }
 }

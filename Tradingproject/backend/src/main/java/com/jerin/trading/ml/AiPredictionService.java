@@ -41,10 +41,14 @@ public class AiPredictionService {
     private static final java.util.Set<String> INTRADAY_LIKE_HORIZONS = java.util.Set.of("INTRADAY", "INTRADAY_ADAPTIVE");
 
     private final AiPredictionRepository predictionRepository;
+    private final AiPredictionSnapshotRepository snapshotRepository;
     private final OhlcvCandleRepository candleRepository;
 
-    public AiPredictionService(AiPredictionRepository predictionRepository, OhlcvCandleRepository candleRepository) {
+    public AiPredictionService(AiPredictionRepository predictionRepository,
+                                AiPredictionSnapshotRepository snapshotRepository,
+                                OhlcvCandleRepository candleRepository) {
         this.predictionRepository = predictionRepository;
+        this.snapshotRepository = snapshotRepository;
         this.candleRepository = candleRepository;
     }
 
@@ -52,13 +56,26 @@ public class AiPredictionService {
     public AiPrediction recordPrediction(String instrument, String horizon, String valueType, String modelVersion,
                                           BigDecimal predictedValue, BigDecimal baselineValue, LocalDate targetDate,
                                           BigDecimal predictedPrice, BigDecimal baselinePrice) {
+        OffsetDateTime now = OffsetDateTime.now();
+        BigDecimal resolvedPredictedPrice = "PRICE".equals(valueType) ? predictedValue : predictedPrice;
+        BigDecimal resolvedBaselinePrice = "PRICE".equals(valueType) ? baselineValue : baselinePrice;
+
+        // Immutable append — never overwritten, unlike the upsert below. This is what preserves
+        // the day's first call once later hourly re-predictions come in.
+        snapshotRepository.save(AiPredictionSnapshot.builder()
+                .instrument(instrument).horizon(horizon).valueType(valueType).modelVersion(modelVersion)
+                .predictedAtTs(now).targetDate(targetDate)
+                .predictedValue(predictedValue).baselineValue(baselineValue)
+                .predictedPrice(resolvedPredictedPrice).baselinePrice(resolvedBaselinePrice)
+                .build());
+
         Optional<AiPrediction> existing = predictionRepository.findByInstrumentAndHorizonAndTargetDate(instrument, horizon, targetDate);
         AiPrediction prediction = existing.orElseGet(AiPrediction::new);
         prediction.setInstrument(instrument);
         prediction.setHorizon(horizon);
         prediction.setValueType(valueType);
         prediction.setModelVersion(modelVersion);
-        prediction.setPredictedAtTs(OffsetDateTime.now());
+        prediction.setPredictedAtTs(now);
         prediction.setTargetDate(targetDate);
         prediction.setPredictedValue(predictedValue);
         prediction.setBaselineValue(baselineValue);
@@ -66,8 +83,8 @@ public class AiPredictionService {
         // it from predictedValue/baselineValue rather than trusting a possibly-stale caller-
         // supplied one. For RETURN_PCT (FORWARD_*), the caller supplies the converted price
         // since only it knows the anchor close the % was computed from.
-        prediction.setPredictedPrice("PRICE".equals(valueType) ? predictedValue : predictedPrice);
-        prediction.setBaselinePrice("PRICE".equals(valueType) ? baselineValue : baselinePrice);
+        prediction.setPredictedPrice(resolvedPredictedPrice);
+        prediction.setBaselinePrice(resolvedBaselinePrice);
         return predictionRepository.save(prediction);
     }
 
@@ -183,5 +200,63 @@ public class AiPredictionService {
                 BigDecimal.valueOf(avgBaselineError).setScale(4, RoundingMode.HALF_UP),
                 BigDecimal.valueOf(betterPct).setScale(2, RoundingMode.HALF_UP),
                 BigDecimal.valueOf(directionPct).setScale(2, RoundingMode.HALF_UP));
+    }
+
+    /** The fair version of {@link #rollingAccuracy} — see {@link FirstCallRollingAccuracy}. Only
+     * days that had a recorded snapshot contribute; days predating the snapshot table's
+     * introduction (2026-09-17) are silently skipped since no first-call was ever captured for
+     * them. */
+    public FirstCallRollingAccuracy firstCallRollingAccuracy(String instrument, String horizon, int window) {
+        List<AiPrediction> recent = predictionRepository.findRecentEvaluated(instrument, horizon).stream()
+                .limit(window)
+                .toList();
+
+        List<BigDecimal> aiErrors = new java.util.ArrayList<>();
+        List<BigDecimal> baselineErrors = new java.util.ArrayList<>();
+        List<Boolean> betterThanBaseline = new java.util.ArrayList<>();
+        List<Boolean> directionCorrect = new java.util.ArrayList<>();
+        List<BigDecimal> revisionGradients = new java.util.ArrayList<>();
+
+        for (AiPrediction evaluated : recent) {
+            Optional<AiPredictionSnapshot> first = snapshotRepository.findFirstOfDay(instrument, horizon, evaluated.getTargetDate());
+            if (first.isEmpty()) {
+                continue; // predates the snapshot table, or never recorded — skip rather than guess
+            }
+            AiPredictionSnapshot firstSnapshot = first.get();
+            BigDecimal actual = evaluated.getActualValue();
+
+            BigDecimal aiError = actual.subtract(firstSnapshot.getPredictedValue()).abs();
+            BigDecimal baselineError = actual.subtract(firstSnapshot.getBaselineValue()).abs();
+            aiErrors.add(aiError);
+            baselineErrors.add(baselineError);
+            betterThanBaseline.add(aiError.compareTo(baselineError) < 0);
+
+            BigDecimal actualDirection = actual.subtract(firstSnapshot.getBaselineValue());
+            BigDecimal predictedDirection = firstSnapshot.getPredictedValue().subtract(firstSnapshot.getBaselineValue());
+            directionCorrect.add(actualDirection.signum() == predictedDirection.signum());
+
+            snapshotRepository.findLastOfDay(instrument, horizon, evaluated.getTargetDate())
+                    .ifPresent(last -> revisionGradients.add(last.getPredictedValue().subtract(firstSnapshot.getPredictedValue()).abs()));
+        }
+
+        if (aiErrors.isEmpty()) {
+            return new FirstCallRollingAccuracy(instrument, horizon, window, 0, null, null, null, null, null);
+        }
+
+        double avgAiError = aiErrors.stream().mapToDouble(BigDecimal::doubleValue).average().orElse(0);
+        double avgBaselineError = baselineErrors.stream().mapToDouble(BigDecimal::doubleValue).average().orElse(0);
+        double betterPct = betterThanBaseline.stream().filter(Boolean::booleanValue).count() * 100.0 / betterThanBaseline.size();
+        double directionPct = directionCorrect.stream().filter(Boolean::booleanValue).count() * 100.0 / directionCorrect.size();
+        BigDecimal avgGradient = revisionGradients.isEmpty() ? null
+                : BigDecimal.valueOf(revisionGradients.stream().mapToDouble(BigDecimal::doubleValue).average().orElse(0))
+                        .setScale(4, RoundingMode.HALF_UP);
+
+        return new FirstCallRollingAccuracy(
+                instrument, horizon, window, aiErrors.size(),
+                BigDecimal.valueOf(avgAiError).setScale(4, RoundingMode.HALF_UP),
+                BigDecimal.valueOf(avgBaselineError).setScale(4, RoundingMode.HALF_UP),
+                BigDecimal.valueOf(betterPct).setScale(2, RoundingMode.HALF_UP),
+                BigDecimal.valueOf(directionPct).setScale(2, RoundingMode.HALF_UP),
+                avgGradient);
     }
 }
