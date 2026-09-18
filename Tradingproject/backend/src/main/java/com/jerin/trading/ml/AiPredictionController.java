@@ -34,8 +34,15 @@ public class AiPredictionController {
             BigDecimal predictedPrice, BigDecimal baselinePrice) {
     }
 
+    /** Returns the stored prediction, or {@code {"recorded": false, ...}} (still valid JSON, since
+     * the offline script parses every response) when an INTRADAY call arrives after the close on
+     * its own target day — see {@link AiPredictionService#isPastRecordingWindow}. */
     @PostMapping
-    public AiPrediction record(@RequestBody RecordRequest request) {
+    public Object record(@RequestBody RecordRequest request) {
+        if (predictionService.isPastRecordingWindow(request.horizon(), request.targetDate())) {
+            return Map.of("recorded", false,
+                    "reason", "INTRADAY call arrived after the 15:30 IST close on its target day; its baseline would already equal the actual close");
+        }
         return predictionService.recordPrediction(
                 request.instrument(), request.horizon(), request.valueType(), request.modelVersion(),
                 request.predictedValue(), request.baselineValue(), request.targetDate(),

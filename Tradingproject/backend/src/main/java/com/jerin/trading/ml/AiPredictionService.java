@@ -40,6 +40,26 @@ public class AiPredictionService {
      * {@link AdaptiveSelectionService}'s pick — both target the same day's actual close. */
     private static final java.util.Set<String> INTRADAY_LIKE_HORIZONS = java.util.Set.of("INTRADAY", "INTRADAY_ADAPTIVE");
 
+    /** NSE's close. An INTRADAY call recorded after this on its own target day is anchored to a
+     * "current price" that already IS the final close, so its baseline error is exactly zero and
+     * its own error is a trivial rounding-sized nudge — found 2026-09-18 to have contaminated 4 of
+     * 11 evaluated days (every instrument, every metric) after manual post-close test dispatches
+     * overwrote the day's real ~3 PM call. Such calls say nothing about forecasting skill. */
+    private static final java.time.LocalTime INTRADAY_CUTOFF = java.time.LocalTime.of(15, 30);
+
+    /** True if {@code at} is after the intraday recording cutoff on {@code targetDate}, i.e. any
+     * INTRADAY call made at that moment would already know the day's close. */
+    public static boolean isPastIntradayCutoff(OffsetDateTime at, LocalDate targetDate) {
+        return at.atZoneSameInstant(IST).isAfter(targetDate.atTime(INTRADAY_CUTOFF).atZone(IST));
+    }
+
+    /** Whether a new call for this horizon/target day should be refused right now. Only the raw
+     * INTRADAY horizon is guarded — INTRADAY_ADAPTIVE is anchored to the deterministic price, not
+     * the live price, so it can't collapse onto the close this way. */
+    public boolean isPastRecordingWindow(String horizon, LocalDate targetDate) {
+        return "INTRADAY".equals(horizon) && isPastIntradayCutoff(OffsetDateTime.now(), targetDate);
+    }
+
     private final AiPredictionRepository predictionRepository;
     private final AiPredictionSnapshotRepository snapshotRepository;
     private final OhlcvCandleRepository candleRepository;
@@ -181,8 +201,12 @@ public class AiPredictionService {
         return predictionRepository.findByInstrumentAndHorizonOrderByTargetDateDesc(instrument, horizon);
     }
 
+    /** Excludes rows whose baseline equals the actual outcome exactly — for INTRADAY that means the
+     * call was made after the close was already known (see {@link #INTRADAY_CUTOFF}), so it can't
+     * show skill either way and would only drag both error columns toward a meaningless result. */
     public RollingAccuracy rollingAccuracy(String instrument, String horizon, int window) {
         List<AiPrediction> recent = predictionRepository.findRecentEvaluated(instrument, horizon).stream()
+                .filter(p -> p.getBaselineValue().compareTo(p.getActualValue()) != 0)
                 .limit(window)
                 .toList();
         if (recent.isEmpty()) {
@@ -223,6 +247,10 @@ public class AiPredictionService {
                 continue; // predates the snapshot table, or never recorded — skip rather than guess
             }
             AiPredictionSnapshot firstSnapshot = first.get();
+            if (isPastIntradayCutoff(firstSnapshot.getPredictedAtTs(), evaluated.getTargetDate())
+                    && "INTRADAY".equals(horizon)) {
+                continue; // the "first" call was already post-close — no genuine first call exists for this day
+            }
             BigDecimal actual = evaluated.getActualValue();
 
             BigDecimal aiError = actual.subtract(firstSnapshot.getPredictedValue()).abs();
@@ -236,6 +264,7 @@ public class AiPredictionService {
             directionCorrect.add(actualDirection.signum() == predictedDirection.signum());
 
             snapshotRepository.findLastOfDay(instrument, horizon, evaluated.getTargetDate())
+                    .filter(last -> !"INTRADAY".equals(horizon) || !isPastIntradayCutoff(last.getPredictedAtTs(), evaluated.getTargetDate()))
                     .ifPresent(last -> revisionGradients.add(last.getPredictedValue().subtract(firstSnapshot.getPredictedValue()).abs()));
         }
 

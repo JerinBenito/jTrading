@@ -54,6 +54,11 @@ public class ModelHeadToHeadService {
             if (detError == null || p.getActualPrice() == null || p.getPredictedPrice() == null) {
                 continue;
             }
+            // Baseline == actual: the AI call was made after the close was known, so its "error" is
+            // a rounding-sized nudge that beats anything trivially — would hand the AI a free win.
+            if (p.getBaselineValue().compareTo(p.getActualValue()) == 0) {
+                continue;
+            }
             BigDecimal aiError = p.getActualPrice().subtract(p.getPredictedPrice()).abs();
             days.add(new HeadToHeadDay(p.getTargetDate(), detError, aiError));
         }

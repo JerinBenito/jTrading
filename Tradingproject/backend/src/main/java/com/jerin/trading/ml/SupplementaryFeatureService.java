@@ -96,6 +96,12 @@ public class SupplementaryFeatureService {
                     || p.getAiErrorAbs() == null || p.getDirectionCorrect() == null) {
                 continue;
             }
+            // baseline == actual means the call was made after the close was known (see
+            // AiPredictionService.INTRADAY_CUTOFF) — its "error" and "direction" are artifacts of
+            // that, not a real outcome, and must never reach the model as a training signal.
+            if (p.getBaselineValue().compareTo(p.getActualValue()) == 0) {
+                continue;
+            }
             double errorPct = p.getAiErrorAbs().divide(p.getActualPrice(), 6, RoundingMode.HALF_UP)
                     .multiply(BigDecimal.valueOf(100)).doubleValue();
             result.put(p.getTargetDate(), new AiErrorInfo(errorPct, Boolean.TRUE.equals(p.getDirectionCorrect()) ? 1 : 0));
@@ -110,6 +116,9 @@ public class SupplementaryFeatureService {
         NavigableMap<LocalDate, AiPredictionSnapshot> lastByDay = new TreeMap<>();
         for (AiPredictionSnapshot s : aiPredictionSnapshotRepository
                 .findByInstrumentAndHorizonOrderByTargetDateAscPredictedAtTsAsc(instrument, AI_INTRADAY_HORIZON)) {
+            if (AiPredictionService.isPastIntradayCutoff(s.getPredictedAtTs(), s.getTargetDate())) {
+                continue; // post-close call: it already knows the close, so it isn't a real revision
+            }
             firstByDay.putIfAbsent(s.getTargetDate(), s); // ascending order: first seen per day is the earliest call
             lastByDay.put(s.getTargetDate(), s); // ascending order: last write per day is the latest call
         }
