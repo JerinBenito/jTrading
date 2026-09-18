@@ -81,6 +81,23 @@ public class AiPredictionSnapshot {
     @Column(name = "deviation_from_previous", precision = 14, scale = 4)
     private BigDecimal deviationFromPrevious;
 
+    /** predicted - this call's own baseline: how far the AI chose to deviate from "assume no
+     * change" at the moment it made this call. */
+    @Column(name = "nudge", precision = 14, scale = 4)
+    private BigDecimal nudge;
+
+    /** {@link #nudge} as % of the baseline — PRICE-typed calls only. */
+    @Column(name = "nudge_pct", precision = 14, scale = 4)
+    private BigDecimal nudgePct;
+
+    /** {@link #deviationFromFirst} as % of the day's first call — PRICE-typed calls only. */
+    @Column(name = "deviation_from_first_pct", precision = 14, scale = 4)
+    private BigDecimal deviationFromFirstPct;
+
+    /** {@link #deviationFromPrevious} as % of the previous call — PRICE-typed calls only. */
+    @Column(name = "deviation_from_previous_pct", precision = 14, scale = 4)
+    private BigDecimal deviationFromPreviousPct;
+
     // Filled in once the target day's outcome is known (see AiPredictionService#evaluatePending) —
     // every call gets its own error, not only the latest one.
     @Column(name = "actual_value", precision = 14, scale = 4)

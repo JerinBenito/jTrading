@@ -87,6 +87,10 @@ public class AiPredictionService {
         Optional<AiPredictionSnapshot> firstOfDay = snapshotRepository.findFirstOfDay(instrument, horizon, targetDate);
         Optional<AiPredictionSnapshot> previousCall = snapshotRepository.findLastOfDay(instrument, horizon, targetDate);
         int sequence = (int) snapshotRepository.countByInstrumentAndHorizonAndTargetDate(instrument, horizon, targetDate) + 1;
+        boolean isPrice = "PRICE".equals(valueType);
+        BigDecimal nudge = predictedValue.subtract(baselineValue);
+        BigDecimal deviationFromFirst = firstOfDay.map(f -> predictedValue.subtract(f.getPredictedValue())).orElse(BigDecimal.ZERO);
+        BigDecimal deviationFromPrevious = previousCall.map(p -> predictedValue.subtract(p.getPredictedValue())).orElse(null);
         snapshotRepository.save(AiPredictionSnapshot.builder()
                 .instrument(instrument).horizon(horizon).valueType(valueType).modelVersion(modelVersion)
                 .predictedAtTs(now).targetDate(targetDate)
@@ -94,8 +98,13 @@ public class AiPredictionService {
                 .predictedPrice(resolvedPredictedPrice).baselinePrice(resolvedBaselinePrice)
                 .sequenceInDay(sequence)
                 .afterClose("INTRADAY".equals(horizon) && isPastIntradayCutoff(now, targetDate))
-                .deviationFromFirst(firstOfDay.map(f -> predictedValue.subtract(f.getPredictedValue())).orElse(BigDecimal.ZERO))
-                .deviationFromPrevious(previousCall.map(p -> predictedValue.subtract(p.getPredictedValue())).orElse(null))
+                .deviationFromFirst(deviationFromFirst)
+                .deviationFromPrevious(deviationFromPrevious)
+                .nudge(nudge)
+                .nudgePct(isPrice ? pctOf(nudge, baselineValue) : null)
+                .deviationFromFirstPct(isPrice ? pctOf(deviationFromFirst, firstOfDay.map(AiPredictionSnapshot::getPredictedValue).orElse(predictedValue)) : null)
+                .deviationFromPreviousPct(isPrice && previousCall.isPresent()
+                        ? pctOf(deviationFromPrevious, previousCall.get().getPredictedValue()) : null)
                 .build());
 
         Optional<AiPrediction> existing = predictionRepository.findByInstrumentAndHorizonAndTargetDate(instrument, horizon, targetDate);
@@ -153,6 +162,14 @@ public class AiPredictionService {
             log.info("Evaluated {} pending AI prediction(s)", evaluated);
         }
         return evaluated;
+    }
+
+    /** {@code part} as a percentage of {@code whole}, 4 decimal places; null when the whole is zero. */
+    private static BigDecimal pctOf(BigDecimal part, BigDecimal whole) {
+        if (whole == null || whole.signum() == 0) {
+            return null;
+        }
+        return part.divide(whole, 8, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100)).setScale(4, RoundingMode.HALF_UP);
     }
 
     /** Gives EVERY call recorded for this instrument/horizon/day its own error against the real

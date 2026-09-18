@@ -83,7 +83,28 @@ public class SupplementaryFeatureService {
                 mostRecentSignalByDay(instrument),
                 aiErrorByDay(instrument),
                 aiRevisionGradientByDay(aiSnapshots),
-                aiFirstCallErrorByDay(aiSnapshots));
+                aiFirstCallErrorByDay(aiSnapshots),
+                validSnapshotsByDay(aiSnapshots));
+    }
+
+    /** Pre-close snapshots grouped by target day, calls in the order they were made. */
+    private Map<LocalDate, List<AiPredictionSnapshot>> validSnapshotsByDay(List<AiPredictionSnapshot> snapshots) {
+        Map<LocalDate, List<AiPredictionSnapshot>> byDay = new HashMap<>();
+        for (AiPredictionSnapshot s : snapshots) { // already in ascending call order
+            if (!s.isAfterClose()) {
+                byDay.computeIfAbsent(s.getTargetDate(), k -> new ArrayList<>()).add(s);
+            }
+        }
+        return byDay;
+    }
+
+    /** Which hourly checkpoint a call belongs to, from its wall-clock time: the 10:10 call is 0,
+     * the 11:10 call is 1, and so on. Wall-clock rather than call order, because extra or delayed
+     * runs shift call order but not the hour a call was actually made in. */
+    static int checkpointOf(AiPredictionSnapshot s) {
+        long hours = java.time.Duration.between(
+                s.getTargetDate().atTime(10, 0).atZone(IST), s.getPredictedAtTs().atZoneSameInstant(IST)).toHours();
+        return (int) Math.max(0, hours);
     }
 
     /** The AI's own realized error, keyed by target_date — {@link Context#forDay} looks this up
@@ -177,6 +198,7 @@ public class SupplementaryFeatureService {
         private final NavigableMap<LocalDate, AiErrorInfo> aiErrorByDay;
         private final NavigableMap<LocalDate, Double> aiRevisionGradientByDay;
         private final NavigableMap<LocalDate, Double> aiFirstCallErrorByDay;
+        private final Map<LocalDate, List<AiPredictionSnapshot>> validSnapshotsByDay;
 
         private Context(Map<LocalDate, HourlyPrediction> deterministicByDay,
                          Map<LocalDate, HourlyPrediction> hmmByDay,
@@ -189,7 +211,8 @@ public class SupplementaryFeatureService {
                          NavigableMap<LocalDate, SignalPrediction> patternByDay,
                          NavigableMap<LocalDate, AiErrorInfo> aiErrorByDay,
                          NavigableMap<LocalDate, Double> aiRevisionGradientByDay,
-                         NavigableMap<LocalDate, Double> aiFirstCallErrorByDay) {
+                         NavigableMap<LocalDate, Double> aiFirstCallErrorByDay,
+                         Map<LocalDate, List<AiPredictionSnapshot>> validSnapshotsByDay) {
             this.deterministicByDay = deterministicByDay;
             this.hmmByDay = hmmByDay;
             this.garchByDay = garchByDay;
@@ -203,6 +226,31 @@ public class SupplementaryFeatureService {
             this.aiErrorByDay = aiErrorByDay;
             this.aiRevisionGradientByDay = aiRevisionGradientByDay;
             this.aiFirstCallErrorByDay = aiFirstCallErrorByDay;
+            this.validSnapshotsByDay = validSnapshotsByDay;
+        }
+
+        /** The AI's own earlier calls today, as seen from hourly checkpoint {@code hoursSinceOpen}:
+         * only calls from strictly earlier checkpoints count, so a call never sees itself or a
+         * same-hour re-run. The same rule serves historical training rows and the live call, so the
+         * model is trained on exactly the view it will have at prediction time. */
+        public SameDayAiContext sameDay(LocalDate day, int hoursSinceOpen) {
+            List<AiPredictionSnapshot> today = validSnapshotsByDay.get(day);
+            if (today == null) {
+                return SameDayAiContext.EMPTY;
+            }
+            List<AiPredictionSnapshot> earlier = today.stream().filter(s -> checkpointOf(s) < hoursSinceOpen).toList();
+            if (earlier.isEmpty()) {
+                return SameDayAiContext.EMPTY;
+            }
+            AiPredictionSnapshot first = earlier.get(0);
+            AiPredictionSnapshot last = earlier.get(earlier.size() - 1);
+            return new SameDayAiContext(
+                    toDouble(first.getNudgePct()), toDouble(last.getNudgePct()),
+                    toDouble(last.getDeviationFromPreviousPct()), toDouble(last.getDeviationFromFirstPct()));
+        }
+
+        private static Double toDouble(BigDecimal value) {
+            return value != null ? value.doubleValue() : null;
         }
 
         public SupplementaryFeatures forDay(LocalDate day, BigDecimal dayOpen) {

@@ -59,6 +59,12 @@ INTRADAY_FEATURES = [
     # means the morning call was too high) read from the stored per-call errors. The revision
     # gradient above is now signed too (was magnitude only, which threw away the direction).
     "aiPriorDayFirstCallErrorPct",
+    # Added 2026-09-19: the AI's view of its OWN earlier calls today, from the stored per-call
+    # table - what it nudged away from the current price at the open and last time, and how much it
+    # revised in between. Only calls from strictly earlier hourly checkpoints are visible (a call
+    # never sees itself), and the same rule builds the training rows, so training matches the live
+    # view. Per-call snapshots only exist from 2026-09-17, so nearly every historical row is NaN.
+    "aiTodayFirstNudgePct", "aiTodayLastNudgePct", "aiTodayLastStepPct", "aiTodayLastDriftFromFirstPct",
 ]
 MULTIDAY_REQUIRED_FEATURES = [
     "dailyReturnPct", "gapFromPrevClosePct", "intradayRangePct",

@@ -125,6 +125,7 @@ public class IntradayFeatureExportService {
                     }
                 }
 
+                SameDayAiContext aiToday = supplementary.sameDay(tradingLocalDate, h);
                 rows.add(new IntradayFeatureRow(
                         instrumentTag, tradingDate, h,
                         returnSoFarPct, volatilitySoFarPct, rsiVal.doubleValue(), emaSpreadPct,
@@ -137,7 +138,9 @@ public class IntradayFeatureExportService {
                         dayFeatures.fundamentalRoe(), dayFeatures.recentPatternWinRate(),
                         dayFeatures.recentPatternDirection(), dayFeatures.aiPriorDayErrorPct(),
                         dayFeatures.aiPriorDayDirectionCorrect(), dayFeatures.aiPriorDayRevisionGradientPct(),
-                        dayFeatures.aiPriorDayFirstCallErrorPct()));
+                        dayFeatures.aiPriorDayFirstCallErrorPct(),
+                        aiToday.firstCallNudgePct(), aiToday.lastCallNudgePct(),
+                        aiToday.lastCallStepPct(), aiToday.lastCallDriftFromFirstPct()));
             }
             globalIndex += today.size();
         }
@@ -215,8 +218,9 @@ public class IntradayFeatureExportService {
 
         LocalDate tradingLocalDate = today.get(0).getTs().atZoneSameInstant(IST).toLocalDate();
         String tradingDate = tradingLocalDate.toString();
-        SupplementaryFeatures dayFeatures = supplementaryFeatureService.contextFor(instrumentTag)
-                .forDay(tradingLocalDate, today.get(0).getOpen());
+        SupplementaryFeatureService.Context liveContext = supplementaryFeatureService.contextFor(instrumentTag);
+        SupplementaryFeatures dayFeatures = liveContext.forDay(tradingLocalDate, today.get(0).getOpen());
+        SameDayAiContext aiToday = liveContext.sameDay(tradingLocalDate, h);
         return Optional.of(new LiveFeatureSnapshot(
                 instrumentTag, tradingDate, h,
                 returnSoFarPct, volatilitySoFarPct, rsiVal.doubleValue(), emaSpreadPct,
@@ -228,7 +232,9 @@ public class IntradayFeatureExportService {
                 dayFeatures.fundamentalRoe(), dayFeatures.recentPatternWinRate(),
                 dayFeatures.recentPatternDirection(), dayFeatures.aiPriorDayErrorPct(),
                 dayFeatures.aiPriorDayDirectionCorrect(), dayFeatures.aiPriorDayRevisionGradientPct(),
-                dayFeatures.aiPriorDayFirstCallErrorPct()));
+                dayFeatures.aiPriorDayFirstCallErrorPct(),
+                aiToday.firstCallNudgePct(), aiToday.lastCallNudgePct(),
+                aiToday.lastCallStepPct(), aiToday.lastCallDriftFromFirstPct()));
     }
 
     /** Average total daily volume over the {@value #VOLUME_LOOKBACK_DAYS} trading days strictly
