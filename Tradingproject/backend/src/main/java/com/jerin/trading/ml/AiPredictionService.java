@@ -81,12 +81,21 @@ public class AiPredictionService {
         BigDecimal resolvedBaselinePrice = "PRICE".equals(valueType) ? baselineValue : baselinePrice;
 
         // Immutable append — never overwritten, unlike the upsert below. This is what preserves
-        // the day's first call once later hourly re-predictions come in.
+        // the day's first call once later hourly re-predictions come in. Its deviation from the
+        // first call and from the previous call are stored now, while both are at hand; its own
+        // error against the real outcome is stamped later, by evaluatePending.
+        Optional<AiPredictionSnapshot> firstOfDay = snapshotRepository.findFirstOfDay(instrument, horizon, targetDate);
+        Optional<AiPredictionSnapshot> previousCall = snapshotRepository.findLastOfDay(instrument, horizon, targetDate);
+        int sequence = (int) snapshotRepository.countByInstrumentAndHorizonAndTargetDate(instrument, horizon, targetDate) + 1;
         snapshotRepository.save(AiPredictionSnapshot.builder()
                 .instrument(instrument).horizon(horizon).valueType(valueType).modelVersion(modelVersion)
                 .predictedAtTs(now).targetDate(targetDate)
                 .predictedValue(predictedValue).baselineValue(baselineValue)
                 .predictedPrice(resolvedPredictedPrice).baselinePrice(resolvedBaselinePrice)
+                .sequenceInDay(sequence)
+                .afterClose("INTRADAY".equals(horizon) && isPastIntradayCutoff(now, targetDate))
+                .deviationFromFirst(firstOfDay.map(f -> predictedValue.subtract(f.getPredictedValue())).orElse(BigDecimal.ZERO))
+                .deviationFromPrevious(previousCall.map(p -> predictedValue.subtract(p.getPredictedValue())).orElse(null))
                 .build());
 
         Optional<AiPrediction> existing = predictionRepository.findByInstrumentAndHorizonAndTargetDate(instrument, horizon, targetDate);
@@ -137,12 +146,50 @@ public class AiPredictionService {
 
             prediction.setEvaluatedAt(OffsetDateTime.now());
             predictionRepository.save(prediction);
+            stampSnapshotErrors(prediction, actual);
             evaluated++;
         }
         if (evaluated > 0) {
             log.info("Evaluated {} pending AI prediction(s)", evaluated);
         }
         return evaluated;
+    }
+
+    /** Gives EVERY call recorded for this instrument/horizon/day its own error against the real
+     * outcome — not only the latest one that {@link AiPrediction} keeps — so the first call's error,
+     * each later call's error, and how the error changed across the day can all be read back. */
+    private void stampSnapshotErrors(AiPrediction evaluated, BigDecimal actual) {
+        for (AiPredictionSnapshot s : snapshotRepository.findByInstrumentAndHorizonAndTargetDateOrderByPredictedAtTsAsc(
+                evaluated.getInstrument(), evaluated.getHorizon(), evaluated.getTargetDate())) {
+            BigDecimal error = s.getPredictedValue().subtract(actual);
+            BigDecimal baselineError = s.getBaselineValue().subtract(actual).abs();
+            s.setActualValue(actual);
+            s.setErrorSigned(error.setScale(4, RoundingMode.HALF_UP));
+            s.setErrorAbs(error.abs().setScale(4, RoundingMode.HALF_UP));
+            s.setErrorPct("PRICE".equals(s.getValueType()) && actual.signum() != 0
+                    ? error.divide(actual, 6, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100)).setScale(4, RoundingMode.HALF_UP)
+                    : null);
+            s.setBaselineErrorAbs(baselineError.setScale(4, RoundingMode.HALF_UP));
+            s.setBetterThanBaseline(error.abs().compareTo(baselineError) < 0);
+            s.setDirectionCorrect(actual.subtract(s.getBaselineValue()).signum()
+                    == s.getPredictedValue().subtract(s.getBaselineValue()).signum());
+            s.setEvaluatedAt(evaluated.getEvaluatedAt());
+            snapshotRepository.save(s);
+        }
+    }
+
+    /** The stored per-call table for the last {@code days} target days: each call's prediction, its
+     * deviation from the day's first call and from the previous call, and — once the day is over —
+     * its own error. Oldest day first, calls in the order they were made. */
+    public List<AiPredictionSnapshot> snapshotHistory(String instrument, String horizon, int days) {
+        List<AiPredictionSnapshot> all = snapshotRepository
+                .findByInstrumentAndHorizonOrderByTargetDateAscPredictedAtTsAsc(instrument, horizon);
+        java.util.TreeSet<LocalDate> keep = new java.util.TreeSet<>();
+        for (AiPredictionSnapshot s : all) {
+            keep.add(s.getTargetDate());
+        }
+        java.util.Set<LocalDate> recent = new java.util.HashSet<>(keep.descendingSet().stream().limit(days).toList());
+        return all.stream().filter(s -> recent.contains(s.getTargetDate())).toList();
     }
 
     /** The realized outcome, both as the value being scored (price for INTRADAY, % return for

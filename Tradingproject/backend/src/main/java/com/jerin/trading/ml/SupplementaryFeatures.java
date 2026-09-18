@@ -51,13 +51,20 @@ public record SupplementaryFeatures(
         /** Whether that same prior-day prediction got the direction right, as 1/0 rather than a
          * boolean for LightGBM's benefit — null under the same conditions as the error above. */
         Integer aiPriorDayDirectionCorrect,
-        /** How far the AI's own prediction moved between its first and last call on that same
-         * prior day, as % of the last call's value — the "revision gradient" this feature set is
-         * named after. Large values mean the AI was still substantially revising its view late
-         * in the day; near-zero means it settled early. Null until a prior day has both a first
-         * and a last recorded snapshot. */
-        Double aiPriorDayRevisionGradientPct
+        /** How far, and in which direction, the AI moved its own prediction between its first and
+         * last call on that same prior day: (last - first) / first * 100. SIGNED — positive means it
+         * revised upward as the day went on, negative downward — since the direction of the drift,
+         * not just its size, is the part that can carry information. Built from the stored
+         * per-call deviations (ai_prediction_snapshots). Null until a prior day has valid
+         * (pre-close) snapshots. */
+        Double aiPriorDayRevisionGradientPct,
+        /** The FIRST call's signed error on the prior evaluated day, as % of that day's actual
+         * close: (first predicted - actual) / actual * 100. Positive means the AI's morning call was
+         * too high, negative too low. This is the fair test of the AI — the first call is made with
+         * the least information — unlike aiPriorDayErrorPct, which scores the near-close call.
+         * Null until a day with a valid pre-close first call has been evaluated. */
+        Double aiPriorDayFirstCallErrorPct
 ) {
     static final SupplementaryFeatures EMPTY = new SupplementaryFeatures(
-            null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+            null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
 }

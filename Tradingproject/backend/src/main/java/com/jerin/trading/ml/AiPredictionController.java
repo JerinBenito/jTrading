@@ -67,6 +67,14 @@ public class AiPredictionController {
         return predictionService.rollingAccuracy(instrument, horizon, window);
     }
 
+    /** The stored per-call error table: every call's prediction, its deviation from the day's first
+     * call and from the previous call, and (once the day is over) its own error. */
+    @GetMapping("/{instrument}/snapshots")
+    public List<AiPredictionSnapshot> snapshots(@PathVariable String instrument, @RequestParam String horizon,
+                                                 @RequestParam(defaultValue = "5") int days) {
+        return predictionService.snapshotHistory(instrument, horizon, days);
+    }
+
     /** The fair version of {@link #rollingAccuracy} for a re-predicted horizon like INTRADAY —
      * scores the day's FIRST call instead of whichever call was latest when evaluated. See
      * {@link FirstCallRollingAccuracy}. */

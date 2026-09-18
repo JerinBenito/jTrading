@@ -33,6 +33,7 @@ public record LiveFeatureSnapshot(
         Integer recentPatternDirection,
         Double aiPriorDayErrorPct,
         Integer aiPriorDayDirectionCorrect,
-        Double aiPriorDayRevisionGradientPct
+        Double aiPriorDayRevisionGradientPct,
+        Double aiPriorDayFirstCallErrorPct
 ) {
 }

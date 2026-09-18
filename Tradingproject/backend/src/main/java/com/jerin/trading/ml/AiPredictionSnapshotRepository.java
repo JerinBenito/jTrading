@@ -10,6 +10,11 @@ import java.util.Optional;
 
 public interface AiPredictionSnapshotRepository extends JpaRepository<AiPredictionSnapshot, Long> {
 
+    long countByInstrumentAndHorizonAndTargetDate(String instrument, String horizon, LocalDate targetDate);
+
+    List<AiPredictionSnapshot> findByInstrumentAndHorizonAndTargetDateOrderByPredictedAtTsAsc(
+            String instrument, String horizon, LocalDate targetDate);
+
     /** Every snapshot for one instrument+horizon, in call order — the raw material for
      * {@link SupplementaryFeatureService}'s "revision gradient" feature, which groups these by
      * day in memory to find each day's first-vs-last call. */

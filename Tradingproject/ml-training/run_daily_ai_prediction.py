@@ -55,6 +55,10 @@ INTRADAY_FEATURES = [
     # recorded (2026-09-17), so expect heavy NaN for a while, same treatment as every other
     # supplementary feature above.
     "aiPriorDayErrorPct", "aiPriorDayDirectionCorrect", "aiPriorDayRevisionGradientPct",
+    # Added 2026-09-18: the FIRST call's signed error (the fair, least-information call - positive
+    # means the morning call was too high) read from the stored per-call errors. The revision
+    # gradient above is now signed too (was magnitude only, which threw away the direction).
+    "aiPriorDayFirstCallErrorPct",
 ]
 MULTIDAY_REQUIRED_FEATURES = [
     "dailyReturnPct", "gapFromPrevClosePct", "intradayRangePct",

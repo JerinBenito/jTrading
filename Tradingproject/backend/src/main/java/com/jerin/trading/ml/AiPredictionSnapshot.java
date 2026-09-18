@@ -62,4 +62,50 @@ public class AiPredictionSnapshot {
 
     @Column(name = "baseline_price", precision = 14, scale = 4)
     private BigDecimal baselinePrice;
+
+    /** 1 for the day's first call, 2 for the next, and so on. */
+    @Column(name = "sequence_in_day")
+    private Integer sequenceInDay;
+
+    /** INTRADAY only: recorded after the 15:30 IST close, so it already knew the close. Kept for
+     * visibility, excluded from every metric and feature. */
+    @Column(name = "after_close", nullable = false)
+    private boolean afterClose;
+
+    /** This call's predicted value minus the day's FIRST call's — signed, so the direction the AI
+     * revised in is kept, not just how far. Zero on the first call itself. */
+    @Column(name = "deviation_from_first", precision = 14, scale = 4)
+    private BigDecimal deviationFromFirst;
+
+    /** This call's predicted value minus the call immediately before it; null on the first call. */
+    @Column(name = "deviation_from_previous", precision = 14, scale = 4)
+    private BigDecimal deviationFromPrevious;
+
+    // Filled in once the target day's outcome is known (see AiPredictionService#evaluatePending) —
+    // every call gets its own error, not only the latest one.
+    @Column(name = "actual_value", precision = 14, scale = 4)
+    private BigDecimal actualValue;
+
+    /** predicted - actual: positive means the AI predicted too high, negative too low. */
+    @Column(name = "error_signed", precision = 14, scale = 4)
+    private BigDecimal errorSigned;
+
+    @Column(name = "error_abs", precision = 14, scale = 4)
+    private BigDecimal errorAbs;
+
+    /** Signed error as % of the actual — PRICE-typed calls only, null for RETURN_PCT. */
+    @Column(name = "error_pct", precision = 14, scale = 4)
+    private BigDecimal errorPct;
+
+    @Column(name = "baseline_error_abs", precision = 14, scale = 4)
+    private BigDecimal baselineErrorAbs;
+
+    @Column(name = "better_than_baseline")
+    private Boolean betterThanBaseline;
+
+    @Column(name = "direction_correct")
+    private Boolean directionCorrect;
+
+    @Column(name = "evaluated_at")
+    private OffsetDateTime evaluatedAt;
 }

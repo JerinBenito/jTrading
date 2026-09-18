@@ -136,7 +136,8 @@ public class IntradayFeatureExportService {
                         dayFeatures.globalUsdInrChangePct(), dayFeatures.fundamentalPe(),
                         dayFeatures.fundamentalRoe(), dayFeatures.recentPatternWinRate(),
                         dayFeatures.recentPatternDirection(), dayFeatures.aiPriorDayErrorPct(),
-                        dayFeatures.aiPriorDayDirectionCorrect(), dayFeatures.aiPriorDayRevisionGradientPct()));
+                        dayFeatures.aiPriorDayDirectionCorrect(), dayFeatures.aiPriorDayRevisionGradientPct(),
+                        dayFeatures.aiPriorDayFirstCallErrorPct()));
             }
             globalIndex += today.size();
         }
@@ -226,7 +227,8 @@ public class IntradayFeatureExportService {
                 dayFeatures.globalUsdInrChangePct(), dayFeatures.fundamentalPe(),
                 dayFeatures.fundamentalRoe(), dayFeatures.recentPatternWinRate(),
                 dayFeatures.recentPatternDirection(), dayFeatures.aiPriorDayErrorPct(),
-                dayFeatures.aiPriorDayDirectionCorrect(), dayFeatures.aiPriorDayRevisionGradientPct()));
+                dayFeatures.aiPriorDayDirectionCorrect(), dayFeatures.aiPriorDayRevisionGradientPct(),
+                dayFeatures.aiPriorDayFirstCallErrorPct()));
     }
 
     /** Average total daily volume over the {@value #VOLUME_LOOKBACK_DAYS} trading days strictly

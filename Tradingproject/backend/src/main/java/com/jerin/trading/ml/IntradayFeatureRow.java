@@ -40,6 +40,7 @@ public record IntradayFeatureRow(
         Integer recentPatternDirection,
         Double aiPriorDayErrorPct,
         Integer aiPriorDayDirectionCorrect,
-        Double aiPriorDayRevisionGradientPct
+        Double aiPriorDayRevisionGradientPct,
+        Double aiPriorDayFirstCallErrorPct
 ) {
 }
