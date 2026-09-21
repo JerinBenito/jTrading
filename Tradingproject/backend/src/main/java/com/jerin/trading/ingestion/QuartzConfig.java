@@ -163,16 +163,20 @@ public class QuartzConfig {
                 .build();
     }
 
-    /** Once daily, 8:00 IST — well before market open. Fundamentals change quarterly at most,
-     * so this is generous, not precision timing; it just needs to run regularly enough to catch
-     * updates without hammering the endpoint. */
+    /** 9:30 and 13:30 IST. This used to run at 8:00, which is before the daily Upstox login — the
+     * token is issued fresh each morning, so at 8:00 every one of the 50 calls got "401 invalid
+     * token" and the job silently never succeeded (found 2026-09-21: fundamentals stale since
+     * Sep 10, the last day the login happened to precede 8:00). 9:30 lands after the usual
+     * pre-market login; 13:30 is a second chance for a late one. Each run just upserts, so a
+     * second run on a good day is harmless. Fundamentals change quarterly at most, so this is
+     * generous, not precision timing. */
     @Bean
     public Trigger companyFundamentalTrigger(JobDetail companyFundamentalJobDetail) {
         return TriggerBuilder.newTrigger()
                 .forJob(companyFundamentalJobDetail)
                 .withIdentity("companyFundamentalTrigger")
                 .withSchedule(CronScheduleBuilder
-                        .cronSchedule("0 0 8 ? * MON-FRI")
+                        .cronSchedule("0 30 9,13 ? * MON-FRI")
                         .inTimeZone(TimeZone.getTimeZone("Asia/Kolkata")))
                 .build();
     }
