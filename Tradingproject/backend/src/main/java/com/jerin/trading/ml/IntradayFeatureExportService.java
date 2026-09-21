@@ -45,7 +45,23 @@ public class IntradayFeatureExportService {
         this.supplementaryFeatureService = supplementaryFeatureService;
     }
 
+    /** After this time on a trading day the final 15:15 candle has been ingested (the 15:45 catch-up
+     * run), so the day's last candle really is its close. */
+    private static final java.time.LocalTime DAY_COMPLETE_FROM = java.time.LocalTime.of(16, 0);
+
+    /**
+     * True while {@code day} is still today and its last ingested candle is not yet the real close.
+     * Training must not use such a day: {@code actualFinalClose} would be whatever candle happens to
+     * be latest, so every row's target would be truncated, and the final row's target would be
+     * exactly 0 (its own close against itself). Worse, the live row being predicted is itself one of
+     * today's rows, so the model could partly replay labels it was just given. Found 2026-09-21.
+     */
+    static boolean isTradingDayInProgress(LocalDate day, java.time.ZonedDateTime nowIst) {
+        return day.equals(nowIst.toLocalDate()) && nowIst.toLocalTime().isBefore(DAY_COMPLETE_FROM);
+    }
+
     public List<IntradayFeatureRow> export(String instrumentTag) {
+        java.time.ZonedDateTime nowIst = java.time.ZonedDateTime.now(IST);
         List<OhlcvCandle> hourly = candleRepository.findByInstrumentAndIntervalOrderByTsAsc(instrumentTag, SOURCE_INTERVAL);
         List<BigDecimal> closes = hourly.stream().map(OhlcvCandle::getClose).toList();
         List<BigDecimal> rsi14 = RsiCalculator.calculate(closes, RSI_PERIOD);
@@ -64,6 +80,10 @@ public class IntradayFeatureExportService {
             if (today.size() < 2) {
                 globalIndex += today.size();
                 continue;
+            }
+            if (isTradingDayInProgress(today.get(0).getTs().atZoneSameInstant(IST).toLocalDate(), nowIst)) {
+                globalIndex += today.size();
+                continue; // the unfinished current day has no real close to learn from yet
             }
             BigDecimal atrValue = dailyAtr14.get(i - 1);
             if (atrValue == null) {

@@ -66,19 +66,28 @@ INTRADAY_FEATURES = [
     # view. Per-call snapshots only exist from 2026-09-17, so nearly every historical row is NaN.
     "aiTodayFirstNudgePct", "aiTodayLastNudgePct", "aiTodayLastStepPct", "aiTodayLastDriftFromFirstPct",
 ]
-# The eight inputs that describe the AI's own past errors, nudges and revisions. All of them are
-# still recorded and served every day, but a feature only enters the FIT once it has real history.
-# Found 2026-09-21: with 1-13 days behind them, LightGBM still split on them heavily (8% of splits)
-# and they ended up steering ~80% of the size of every prediction - a feature that is constant
-# within a day and has a handful of distinct days lets trees isolate those specific days and fit
-# their outcomes, and since every stock moves together on a given day, 1-2 days is really 1-2
-# observations. That is memorisation, not a pattern.
+# The eight inputs that describe the AI's own past errors, nudges and revisions.
 AI_SELF_FEATURES = [
     "aiPriorDayErrorPct", "aiPriorDayDirectionCorrect", "aiPriorDayRevisionGradientPct",
     "aiPriorDayFirstCallErrorPct",
     "aiTodayFirstNudgePct", "aiTodayLastNudgePct", "aiTodayLastStepPct", "aiTodayLastDriftFromFirstPct",
 ]
-MIN_HISTORY_DAYS_FOR_AI_SELF_FEATURES = 30
+# The other inputs whose data sources are only weeks old (as of 2026-09-21: 10-24 days each).
+YOUNG_SUPPLEMENTARY_FEATURES = [
+    "deterministicDeviationPct", "hmmDeviationPct", "garchRangeWidthPct", "pcrLatest",
+    "globalSp500ChangePct", "globalCrudeOilChangePct", "globalUsdInrChangePct",
+    "recentPatternWinRate", "recentPatternDirection",
+]
+# All of these are still recorded and served every day, but a feature only enters the FIT once it
+# has real history. Found 2026-09-21: with 1-13 days behind them, the AI-error inputs took 8% of
+# LightGBM's splits and steered most of the size of every prediction (GARCH, with 10 days, was the
+# largest single driver of NIFTY's call) - a feature that is constant within a day and has a handful
+# of distinct days lets trees isolate those specific days and fit their outcomes, and since every
+# stock moves together on a given day, 1-2 days is really 1-2 observations. That is memorisation,
+# not a pattern. (Fundamentals are not gated: they are constants per instrument over the whole
+# history, so they say which instrument a row is, not which day.)
+HISTORY_GATED_FEATURES = AI_SELF_FEATURES + YOUNG_SUPPLEMENTARY_FEATURES
+MIN_HISTORY_DAYS = 30
 MULTIDAY_REQUIRED_FEATURES = [
     "dailyReturnPct", "gapFromPrevClosePct", "intradayRangePct",
     "emaSpreadPct", "rsi14", "atr14",
@@ -155,7 +164,7 @@ def train_intraday_model():
     features, gated = select_intraday_features(df)
     if gated:
         print("  held out of the fit until they have "
-              f"{MIN_HISTORY_DAYS_FOR_AI_SELF_FEATURES} days of history (still recorded): "
+              f"{MIN_HISTORY_DAYS} days of history (still recorded): "
               + ", ".join(f"{f} ({days}d)" for f, days in gated.items()))
     print(f"  fitting on {len(features)} of {len(INTRADAY_FEATURES)} features")
     model = LGBMRegressor(n_estimators=300, max_depth=5, learning_rate=0.03,
@@ -167,15 +176,15 @@ def train_intraday_model():
 
 
 def select_intraday_features(df):
-    """The features the intraday model may train on, and the AI-self inputs held back (with how many
-    distinct trading days of data each actually has). Everything outside AI_SELF_FEATURES always
-    trains, exactly as before; an AI-self input is admitted the day it reaches
-    MIN_HISTORY_DAYS_FOR_AI_SELF_FEATURES, with no further change needed."""
+    """The features the intraday model may train on, and the young inputs held back (with how many
+    distinct trading days of data each actually has). Everything outside HISTORY_GATED_FEATURES
+    always trains, exactly as before; a gated input is admitted the day it reaches MIN_HISTORY_DAYS,
+    with no further change needed."""
     kept, gated = [], {}
     for f in INTRADAY_FEATURES:
-        if f in AI_SELF_FEATURES:
+        if f in HISTORY_GATED_FEATURES:
             days = int(df.loc[df[f].notna(), "tradingDate"].nunique())
-            if days < MIN_HISTORY_DAYS_FOR_AI_SELF_FEATURES:
+            if days < MIN_HISTORY_DAYS:
                 gated[f] = days
                 continue
         kept.append(f)
