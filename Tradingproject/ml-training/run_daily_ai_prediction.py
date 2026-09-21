@@ -66,6 +66,19 @@ INTRADAY_FEATURES = [
     # view. Per-call snapshots only exist from 2026-09-17, so nearly every historical row is NaN.
     "aiTodayFirstNudgePct", "aiTodayLastNudgePct", "aiTodayLastStepPct", "aiTodayLastDriftFromFirstPct",
 ]
+# The eight inputs that describe the AI's own past errors, nudges and revisions. All of them are
+# still recorded and served every day, but a feature only enters the FIT once it has real history.
+# Found 2026-09-21: with 1-13 days behind them, LightGBM still split on them heavily (8% of splits)
+# and they ended up steering ~80% of the size of every prediction - a feature that is constant
+# within a day and has a handful of distinct days lets trees isolate those specific days and fit
+# their outcomes, and since every stock moves together on a given day, 1-2 days is really 1-2
+# observations. That is memorisation, not a pattern.
+AI_SELF_FEATURES = [
+    "aiPriorDayErrorPct", "aiPriorDayDirectionCorrect", "aiPriorDayRevisionGradientPct",
+    "aiPriorDayFirstCallErrorPct",
+    "aiTodayFirstNudgePct", "aiTodayLastNudgePct", "aiTodayLastStepPct", "aiTodayLastDriftFromFirstPct",
+]
+MIN_HISTORY_DAYS_FOR_AI_SELF_FEATURES = 30
 MULTIDAY_REQUIRED_FEATURES = [
     "dailyReturnPct", "gapFromPrevClosePct", "intradayRangePct",
     "emaSpreadPct", "rsi14", "atr14",
@@ -139,12 +152,42 @@ def train_intraday_model():
     # non-null value anywhere to infer from, pandas types an all-null column as object, which
     # LightGBM rejects outright (same class of bug already hit and fixed on the multi-day path).
     df[INTRADAY_FEATURES] = df[INTRADAY_FEATURES].apply(pd.to_numeric, errors="coerce")
+    features, gated = select_intraday_features(df)
+    if gated:
+        print("  held out of the fit until they have "
+              f"{MIN_HISTORY_DAYS_FOR_AI_SELF_FEATURES} days of history (still recorded): "
+              + ", ".join(f"{f} ({days}d)" for f, days in gated.items()))
+    print(f"  fitting on {len(features)} of {len(INTRADAY_FEATURES)} features")
     model = LGBMRegressor(n_estimators=300, max_depth=5, learning_rate=0.03,
                            subsample=0.8, colsample_bytree=0.8, random_state=42, verbosity=-1)
-    model.fit(df[INTRADAY_FEATURES], df["remainingDriftPct"])
+    model.fit(df[features], df["remainingDriftPct"])
     print(f"  trained on {len(df)} rows")
     save_model(model, "intraday")
     return model
+
+
+def select_intraday_features(df):
+    """The features the intraday model may train on, and the AI-self inputs held back (with how many
+    distinct trading days of data each actually has). Everything outside AI_SELF_FEATURES always
+    trains, exactly as before; an AI-self input is admitted the day it reaches
+    MIN_HISTORY_DAYS_FOR_AI_SELF_FEATURES, with no further change needed."""
+    kept, gated = [], {}
+    for f in INTRADAY_FEATURES:
+        if f in AI_SELF_FEATURES:
+            days = int(df.loc[df[f].notna(), "tradingDate"].nunique())
+            if days < MIN_HISTORY_DAYS_FOR_AI_SELF_FEATURES:
+                gated[f] = days
+                continue
+        kept.append(f)
+    return kept, gated
+
+
+def live_feature_row(live, model):
+    """One live row shaped exactly like the model was trained: the feature list comes from the
+    trained model itself, never from INTRADAY_FEATURES, so a gated feature can't be fed to a model
+    that was fit without it (or a re-admitted one missed)."""
+    names = list(model.booster_.feature_name())
+    return pd.DataFrame([live])[names].apply(pd.to_numeric, errors="coerce")
 
 
 def run_intraday_predictions(model, symbols):
@@ -161,7 +204,7 @@ def run_intraday_predictions(model, symbols):
             skipped += 1
             continue
 
-        row = pd.DataFrame([live])[INTRADAY_FEATURES].apply(pd.to_numeric, errors="coerce")
+        row = live_feature_row(live, model)
         predicted_drift = model.predict(row)[0]
         current_price = live["currentPrice"]
         predicted_close = current_price * (1 + predicted_drift / 100)
