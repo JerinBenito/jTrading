@@ -31,13 +31,29 @@ public class EquityBasketIngestionService {
     private final IngestionService ingestionService;
 
     /** Equity instrument keys and ISINs are stable, so resolve each symbol at most once per
-     * process lifetime rather than hitting the search endpoint 49 times every single hour. */
+     * process lifetime rather than hitting the search endpoint 49 times every single hour. Seeded
+     * at startup with {@link #KNOWN_INSTRUMENT_KEYS} so a symbol Upstox's search struggles with
+     * never has to depend on that search succeeding after a restart. */
     private final Map<String, String> instrumentKeyCache = new ConcurrentHashMap<>();
     private final Map<String, String> isinCache = new ConcurrentHashMap<>();
+
+    /** Upstox's exact-match search (see UpstoxBrokerClient#searchEquity) fails to return M&M at all
+     * on some days — confirmed 2026-09-22: consistently NOT_FOUND across repeated retries, while
+     * other basket symbols with their own special characters (e.g. BAJAJ-AUTO's hyphen) resolved
+     * fine in the same minute, so this isn't a broader outage. The instrument key is completely
+     * stable (it IS the ISIN, prefixed by exchange/segment), so once known it never needs to be
+     * re-searched — verified working via a direct backfill on 2026-09-21. Add further entries here
+     * if another symbol turns out to have the same problem. */
+    private static final Map<String, String> KNOWN_INSTRUMENT_KEYS = Map.of(
+            "M&M", "NSE_EQ|INE101A01026");
 
     public EquityBasketIngestionService(BrokerClient brokerClient, IngestionService ingestionService) {
         this.brokerClient = brokerClient;
         this.ingestionService = ingestionService;
+        KNOWN_INSTRUMENT_KEYS.forEach((symbol, key) -> {
+            instrumentKeyCache.put(symbol, key);
+            isinCache.put(symbol, key.substring(key.indexOf('|') + 1));
+        });
     }
 
     /** Public wrapper for consumers outside this service (e.g. the live feed relay) that need a
