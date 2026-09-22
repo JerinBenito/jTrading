@@ -125,4 +125,16 @@ public class AiPredictionSnapshot {
 
     @Column(name = "evaluated_at")
     private OffsetDateTime evaluatedAt;
+
+    /** Same meaning as {@link AiPrediction#getPredictedRangeLow()} — recorded per call, not only
+     * on the latest one, so the learned range's own history can be inspected the same way every
+     * other per-call field can. */
+    @Column(name = "predicted_range_low", precision = 14, scale = 4)
+    private BigDecimal predictedRangeLow;
+
+    @Column(name = "predicted_range_high", precision = 14, scale = 4)
+    private BigDecimal predictedRangeHigh;
+
+    @Column(name = "within_predicted_range")
+    private Boolean withinPredictedRange;
 }

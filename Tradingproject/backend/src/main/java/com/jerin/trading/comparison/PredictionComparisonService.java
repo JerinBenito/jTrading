@@ -167,18 +167,27 @@ public class PredictionComparisonService {
     }
 
     private PredictionComparisonRow toAiRow(AiPrediction p, String label, BigDecimal currentPrice) {
-        BigDecimal[] band = computeAiErrorBand(p.getInstrument(), p.getHorizon(), p.getPredictedPrice());
+        // Prefer the genuinely learned range (see AiPrediction#getPredictedRangeLow) once one was
+        // recorded for this specific call; the error-band heuristic below only fills in for rows
+        // from before the range models existed, or on a day they were still gated out by history.
+        BigDecimal rangeLow = p.getPredictedRangeLow();
+        BigDecimal rangeHigh = p.getPredictedRangeHigh();
+        if (rangeLow == null || rangeHigh == null) {
+            BigDecimal[] band = computeAiErrorBand(p.getInstrument(), p.getHorizon(), p.getPredictedPrice());
+            rangeLow = band != null ? band[0] : null;
+            rangeHigh = band != null ? band[1] : null;
+        }
         return new PredictionComparisonRow(
                 "AI", label, p.getModelVersion(), p.getTargetDate(),
-                p.getPredictedPrice(), band != null ? band[0] : null, band != null ? band[1] : null,
+                p.getPredictedPrice(), rangeLow, rangeHigh,
                 p.getBaselinePrice(), currentPrice, p.getActualPrice(),
                 p.getActualValue() != null, p.getBetterThanBaseline(), p.getDirectionCorrect());
     }
 
-    /** A genuine prediction band derived from this model's own recent out-of-sample errors
-     * (± average absolute error over up to the last 30 evaluated predictions) — not a fabricated
-     * confidence interval. Returns null when fewer than {@link #MIN_SAMPLES_FOR_AI_BAND}
-     * evaluated predictions exist yet, rather than guessing. */
+    /** Fallback only — a prediction band derived from this model's own recent out-of-sample errors
+     * (± average absolute error over up to the last 30 evaluated predictions), used when no
+     * genuinely learned range (see {@link #toAiRow}) has been recorded yet. Returns null when
+     * fewer than {@link #MIN_SAMPLES_FOR_AI_BAND} evaluated predictions exist, rather than guessing. */
     private BigDecimal[] computeAiErrorBand(String instrument, String horizon, BigDecimal predictedPrice) {
         List<AiPrediction> recent = aiPredictionRepository.findRecentEvaluated(instrument, horizon);
         BigDecimal sumAbsError = BigDecimal.ZERO;

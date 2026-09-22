@@ -153,6 +153,12 @@ def save_model(model, name):
     return path
 
 
+# Targets a 90% interval, matching the deterministic model's real backtested range coverage
+# (~90%) so the two are judged on comparable terms.
+QUANTILE_LOW_ALPHA = 0.05
+QUANTILE_HIGH_ALPHA = 0.95
+
+
 def train_intraday_model():
     print("Training intraday model on full history...")
     rows = get_json("/api/ml/intraday-features/all")
@@ -167,12 +173,24 @@ def train_intraday_model():
               f"{MIN_HISTORY_DAYS} days of history (still recorded): "
               + ", ".join(f"{f} ({days}d)" for f, days in gated.items()))
     print(f"  fitting on {len(features)} of {len(INTRADAY_FEATURES)} features")
-    model = LGBMRegressor(n_estimators=300, max_depth=5, learning_rate=0.03,
-                           subsample=0.8, colsample_bytree=0.8, random_state=42, verbosity=-1)
-    model.fit(df[features], df["remainingDriftPct"])
+
+    # Three quantile-regression models, same features and hyperparameters (never separately
+    # tuned for this - inherited as-is from the original point model), differing only in which
+    # quantile of the outcome each is trained to predict. The median model IS the point
+    # prediction now (2026-09-23, per an explicit request to unify the two, so the point call and
+    # its range can never disagree - both come from the same model family instead of two
+    # unrelated fits). The low/high models give a genuinely LEARNED range around it - narrower or
+    # wider depending on what the model has seen for similar situations, not a fixed formula.
+    models = {}
+    for name, alpha in (("low", QUANTILE_LOW_ALPHA), ("median", 0.5), ("high", QUANTILE_HIGH_ALPHA)):
+        m = LGBMRegressor(n_estimators=300, max_depth=5, learning_rate=0.03,
+                           subsample=0.8, colsample_bytree=0.8, random_state=42, verbosity=-1,
+                           objective="quantile", alpha=alpha)
+        m.fit(df[features], df["remainingDriftPct"])
+        save_model(m, f"intraday_{name}")
+        models[name] = m
     print(f"  trained on {len(df)} rows")
-    save_model(model, "intraday")
-    return model
+    return models
 
 
 def select_intraday_features(df):
@@ -199,7 +217,7 @@ def live_feature_row(live, model):
     return pd.DataFrame([live])[names].apply(pd.to_numeric, errors="coerce")
 
 
-def run_intraday_predictions(model, symbols):
+def run_intraday_predictions(models, symbols):
     """Deliberately overwrites today's existing INTRADAY prediction every time this runs (the
     backend upserts by instrument+horizon+day) rather than skipping if one already exists - a
     later call in the same day means a fresher live snapshot with more of today's actual price
@@ -213,10 +231,18 @@ def run_intraday_predictions(model, symbols):
             skipped += 1
             continue
 
-        row = live_feature_row(live, model)
-        predicted_drift = model.predict(row)[0]
+        # All three models were trained on the identical feature set this run, so any one of
+        # them shapes the row correctly.
+        row = live_feature_row(live, models["median"])
         current_price = live["currentPrice"]
-        predicted_close = current_price * (1 + predicted_drift / 100)
+        drifts = {name: m.predict(row)[0] for name, m in models.items()}
+        # The three models are fit independently, so on a given call there's a small chance the
+        # "low" model's output lands above "median" or "high" (quantile crossing) - sort rather
+        # than assume it can't happen, so the recorded range is always internally consistent.
+        low_drift, median_drift, high_drift = sorted(drifts.values())
+        predicted_close = current_price * (1 + median_drift / 100)
+        range_low = current_price * (1 + low_drift / 100)
+        range_high = current_price * (1 + high_drift / 100)
 
         post_json("/api/ai-predictions", {
             "instrument": sym,
@@ -226,6 +252,8 @@ def run_intraday_predictions(model, symbols):
             "predictedValue": round(predicted_close, 4),
             "baselineValue": round(current_price, 4),
             "targetDate": live["tradingDate"],
+            "predictedRangeLow": round(range_low, 4),
+            "predictedRangeHigh": round(range_high, 4),
         })
         submitted += 1
     print(f"  submitted {submitted} intraday predictions, skipped {skipped} (no live data yet)")
@@ -320,8 +348,8 @@ if __name__ == "__main__":
     # snapshot that includes more of today's actual price action than the last run had -
     # genuinely re-predicting from newer information, not just re-anchoring the point estimate
     # to the current price the way the deterministic model does.
-    intraday_model = train_intraday_model()
-    run_intraday_predictions(intraday_model, symbols)
+    intraday_models = train_intraday_model()
+    run_intraday_predictions(intraday_models, symbols)
 
     # Multi-day: only needs one real run per day - its features/target don't change intraday.
     if already_ran_multiday_today():

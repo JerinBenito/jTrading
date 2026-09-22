@@ -75,6 +75,23 @@ public class AiPrediction {
     @Column(name = "actual_price", precision = 14, scale = 4)
     private BigDecimal actualPrice;
 
+    /** A genuinely learned range, from a separate quantile-regression pair of models (see
+     * run_daily_ai_prediction.py) trained on the same features and gated by the same 30-day
+     * history rule as everything else — not a fixed-formula width. Null until those models have
+     * enough history to train at all, and for any horizon other than INTRADAY, which is the only
+     * one this was built for. */
+    @Column(name = "predicted_range_low", precision = 14, scale = 4)
+    private BigDecimal predictedRangeLow;
+
+    @Column(name = "predicted_range_high", precision = 14, scale = 4)
+    private BigDecimal predictedRangeHigh;
+
+    /** Whether the actual outcome fell inside [predictedRangeLow, predictedRangeHigh] — the
+     * coverage check a learned range needs the same as a fixed one; see
+     * {@link AiPredictionService#rangeCoverage}. Null when no range was ever recorded. */
+    @Column(name = "within_predicted_range")
+    private Boolean withinPredictedRange;
+
     @Column(name = "evaluated_at")
     private OffsetDateTime evaluatedAt;
 

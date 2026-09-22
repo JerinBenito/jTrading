@@ -76,6 +76,19 @@ public class AiPredictionService {
     public AiPrediction recordPrediction(String instrument, String horizon, String valueType, String modelVersion,
                                           BigDecimal predictedValue, BigDecimal baselineValue, LocalDate targetDate,
                                           BigDecimal predictedPrice, BigDecimal baselinePrice) {
+        return recordPrediction(instrument, horizon, valueType, modelVersion, predictedValue, baselineValue,
+                targetDate, predictedPrice, baselinePrice, null, null);
+    }
+
+    /** Same as the five-price-argument overload, plus a learned range around the point prediction —
+     * see {@link AiPrediction#getPredictedRangeLow()}. Both range arguments are optional; a caller
+     * that has no range yet (any non-INTRADAY horizon, or before the range models have enough
+     * history to train) simply omits them and everything behaves exactly as before. */
+    @Transactional
+    public AiPrediction recordPrediction(String instrument, String horizon, String valueType, String modelVersion,
+                                          BigDecimal predictedValue, BigDecimal baselineValue, LocalDate targetDate,
+                                          BigDecimal predictedPrice, BigDecimal baselinePrice,
+                                          BigDecimal predictedRangeLow, BigDecimal predictedRangeHigh) {
         OffsetDateTime now = OffsetDateTime.now();
         BigDecimal resolvedPredictedPrice = "PRICE".equals(valueType) ? predictedValue : predictedPrice;
         BigDecimal resolvedBaselinePrice = "PRICE".equals(valueType) ? baselineValue : baselinePrice;
@@ -105,6 +118,8 @@ public class AiPredictionService {
                 .deviationFromFirstPct(isPrice ? pctOf(deviationFromFirst, firstOfDay.map(AiPredictionSnapshot::getPredictedValue).orElse(predictedValue)) : null)
                 .deviationFromPreviousPct(isPrice && previousCall.isPresent()
                         ? pctOf(deviationFromPrevious, previousCall.get().getPredictedValue()) : null)
+                .predictedRangeLow(predictedRangeLow)
+                .predictedRangeHigh(predictedRangeHigh)
                 .build());
 
         Optional<AiPrediction> existing = predictionRepository.findByInstrumentAndHorizonAndTargetDate(instrument, horizon, targetDate);
@@ -123,6 +138,8 @@ public class AiPredictionService {
         // since only it knows the anchor close the % was computed from.
         prediction.setPredictedPrice(resolvedPredictedPrice);
         prediction.setBaselinePrice(resolvedBaselinePrice);
+        prediction.setPredictedRangeLow(predictedRangeLow);
+        prediction.setPredictedRangeHigh(predictedRangeHigh);
         return predictionRepository.save(prediction);
     }
 
@@ -153,6 +170,9 @@ public class AiPredictionService {
             BigDecimal predictedDirection = prediction.getPredictedValue().subtract(prediction.getBaselineValue());
             prediction.setDirectionCorrect(actualDirection.signum() == predictedDirection.signum());
 
+            prediction.setWithinPredictedRange(withinRange(
+                    outcome.price(), prediction.getPredictedRangeLow(), prediction.getPredictedRangeHigh()));
+
             prediction.setEvaluatedAt(OffsetDateTime.now());
             predictionRepository.save(prediction);
             stampSnapshotErrors(prediction, actual);
@@ -162,6 +182,15 @@ public class AiPredictionService {
             log.info("Evaluated {} pending AI prediction(s)", evaluated);
         }
         return evaluated;
+    }
+
+    /** Null (not false) when no range was ever recorded for this call, so a caller can distinguish
+     * "no range to check" from "checked, and it missed." Package-private for direct unit testing. */
+    static Boolean withinRange(BigDecimal actualPrice, BigDecimal low, BigDecimal high) {
+        if (low == null || high == null) {
+            return null;
+        }
+        return actualPrice.compareTo(low) >= 0 && actualPrice.compareTo(high) <= 0;
     }
 
     /** {@code part} as a percentage of {@code whole}, 4 decimal places; null when the whole is zero. */
@@ -190,6 +219,7 @@ public class AiPredictionService {
             s.setBetterThanBaseline(error.abs().compareTo(baselineError) < 0);
             s.setDirectionCorrect(actual.subtract(s.getBaselineValue()).signum()
                     == s.getPredictedValue().subtract(s.getBaselineValue()).signum());
+            s.setWithinPredictedRange(withinRange(evaluated.getActualPrice(), s.getPredictedRangeLow(), s.getPredictedRangeHigh()));
             s.setEvaluatedAt(evaluated.getEvaluatedAt());
             snapshotRepository.save(s);
         }
@@ -288,6 +318,33 @@ public class AiPredictionService {
                 BigDecimal.valueOf(avgBaselineError).setScale(4, RoundingMode.HALF_UP),
                 BigDecimal.valueOf(betterPct).setScale(2, RoundingMode.HALF_UP),
                 BigDecimal.valueOf(directionPct).setScale(2, RoundingMode.HALF_UP));
+    }
+
+    /** The learned range's own track record — same "excludes the after-close-contaminated rows"
+     * rule as {@link #rollingAccuracy}, scored on whichever call was latest when evaluated (the
+     * range narrows through the day exactly like the point prediction does, so "latest" is the
+     * range's most-informed, most-current view, not its fairest test — there is no separate
+     * first-call version of this yet). Only rows that actually have a recorded range count towards
+     * {@code evaluatedCount}; a day predating the range models, or a day the range models were
+     * still gated out by history, is silently skipped rather than counted as a miss. */
+    public RangeCoverage rangeCoverage(String instrument, String horizon, int window) {
+        List<AiPrediction> withRange = predictionRepository.findRecentEvaluated(instrument, horizon).stream()
+                .filter(p -> p.getBaselineValue().compareTo(p.getActualValue()) != 0)
+                .filter(p -> p.getWithinPredictedRange() != null)
+                .limit(window)
+                .toList();
+        if (withRange.isEmpty()) {
+            return new RangeCoverage(instrument, horizon, window, 0, null, null);
+        }
+        double coverage = withRange.stream().filter(p -> Boolean.TRUE.equals(p.getWithinPredictedRange())).count()
+                * 100.0 / withRange.size();
+        double avgWidthPct = withRange.stream()
+                .mapToDouble(p -> p.getPredictedRangeHigh().subtract(p.getPredictedRangeLow())
+                        .divide(p.getActualPrice(), 6, RoundingMode.HALF_UP).doubleValue() * 100)
+                .average().orElse(0);
+        return new RangeCoverage(instrument, horizon, window, withRange.size(),
+                BigDecimal.valueOf(coverage).setScale(2, RoundingMode.HALF_UP),
+                BigDecimal.valueOf(avgWidthPct).setScale(4, RoundingMode.HALF_UP));
     }
 
     /** The fair version of {@link #rollingAccuracy} — see {@link FirstCallRollingAccuracy}. Only

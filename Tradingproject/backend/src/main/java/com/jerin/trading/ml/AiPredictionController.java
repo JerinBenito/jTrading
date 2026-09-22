@@ -31,7 +31,11 @@ public class AiPredictionController {
             /** Only needed for RETURN_PCT (FORWARD_*) predictions — the % converted to a real
              * price using the anchor close the caller computed it from. Ignored for PRICE
              * (INTRADAY), which derives its price directly from predictedValue/baselineValue. */
-            BigDecimal predictedPrice, BigDecimal baselinePrice) {
+            BigDecimal predictedPrice, BigDecimal baselinePrice,
+            /** A learned range around the prediction, always in real price terms regardless of
+             * valueType — see {@link AiPrediction#getPredictedRangeLow()}. Both optional; omit
+             * both (or leave null) when there is no range yet. */
+            BigDecimal predictedRangeLow, BigDecimal predictedRangeHigh) {
     }
 
     /** Returns the stored prediction, or {@code {"recorded": false, ...}} (still valid JSON, since
@@ -46,7 +50,8 @@ public class AiPredictionController {
         return predictionService.recordPrediction(
                 request.instrument(), request.horizon(), request.valueType(), request.modelVersion(),
                 request.predictedValue(), request.baselineValue(), request.targetDate(),
-                request.predictedPrice(), request.baselinePrice());
+                request.predictedPrice(), request.baselinePrice(),
+                request.predictedRangeLow(), request.predictedRangeHigh());
     }
 
     /** Evaluates every pending prediction across all instruments/horizons whose outcome is now knowable. */
@@ -82,5 +87,12 @@ public class AiPredictionController {
     public FirstCallRollingAccuracy firstCallRollingAccuracy(@PathVariable String instrument, @RequestParam String horizon,
                                                                @RequestParam(defaultValue = "20") int window) {
         return predictionService.firstCallRollingAccuracy(instrument, horizon, window);
+    }
+
+    /** How well the AI's own learned range has held up — see {@link RangeCoverage}. */
+    @GetMapping("/{instrument}/range-coverage")
+    public RangeCoverage rangeCoverage(@PathVariable String instrument, @RequestParam String horizon,
+                                        @RequestParam(defaultValue = "20") int window) {
+        return predictionService.rangeCoverage(instrument, horizon, window);
     }
 }
