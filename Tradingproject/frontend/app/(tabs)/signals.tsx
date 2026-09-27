@@ -1,7 +1,8 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { FlatList, RefreshControl, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors } from '../../src/constants/colors';
+import { useTheme } from '../../src/theme/ThemeContext';
+import type { Theme } from '../../src/theme/tokens';
 import { useInstrument } from '../../src/context/InstrumentContext';
 import { useApiData } from '../../src/hooks/useApiData';
 import { api } from '../../src/api/client';
@@ -13,6 +14,8 @@ import { EmptyState, ErrorState, LoadingState } from '../../src/components/Scree
 export default function SignalsScreen() {
   const { instrument } = useInstrument();
   const insets = useSafeAreaInsets();
+  const { theme: colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const signals = useApiData(() => api.getSignalHistory(instrument), [instrument]);
 
   const [manualRefreshing, setManualRefreshing] = useState(false);
@@ -53,21 +56,23 @@ export default function SignalsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    padding: 16,
-    paddingBottom: 32,
-    gap: 10,
-  },
-  header: {
-    gap: 14,
-    marginBottom: 14,
-  },
-  separator: {
-    height: 10,
-  },
-});
+function createStyles(colors: Theme) {
+  return StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    content: {
+      padding: 16,
+      paddingBottom: 32,
+      gap: 10,
+    },
+    header: {
+      gap: 14,
+      marginBottom: 14,
+    },
+    separator: {
+      height: 10,
+    },
+  });
+}

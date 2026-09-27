@@ -1,5 +1,7 @@
+import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { colors } from '../constants/colors';
+import { useTheme } from '../theme/ThemeContext';
+import type { Theme } from '../theme/tokens';
 import { SignalListItem } from './SignalListItem';
 import type { SignalHistoryEntry } from '../api/types';
 
@@ -7,6 +9,9 @@ import type { SignalHistoryEntry } from '../api/types';
  * uses (NIFTY/BANKNIFTY only, via the instrument toggle), reused here so a basket stock's own
  * signal history is visible on its detail screen too, since the tab itself can't reach it. */
 export function PatternSignalsSection({ signals }: { signals: SignalHistoryEntry[] }) {
+  const { theme: colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   return (
     <View style={styles.section}>
       <Text style={styles.title}>Pattern signals</Text>
@@ -28,33 +33,35 @@ export function PatternSignalsSection({ signals }: { signals: SignalHistoryEntry
   );
 }
 
-const styles = StyleSheet.create({
-  section: {
-    gap: 10,
-  },
-  title: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  subtitle: {
-    color: colors.textMuted,
-    fontSize: 11,
-    lineHeight: 15,
-    marginTop: -6,
-  },
-  list: {
-    gap: 8,
-  },
-  empty: {
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 16,
-  },
-  emptyText: {
-    color: colors.textMuted,
-    fontSize: 12,
-  },
-});
+function createStyles(colors: Theme) {
+  return StyleSheet.create({
+    section: {
+      gap: 10,
+    },
+    title: {
+      color: colors.textSecondary,
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    subtitle: {
+      color: colors.textMuted,
+      fontSize: 11,
+      lineHeight: 15,
+      marginTop: -6,
+    },
+    list: {
+      gap: 8,
+    },
+    empty: {
+      backgroundColor: colors.surface,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: 16,
+    },
+    emptyText: {
+      color: colors.textMuted,
+      fontSize: 12,
+    },
+  });
+}

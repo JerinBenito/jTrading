@@ -146,6 +146,18 @@ export interface PredictionComparisonResponse {
   rows: PredictionComparisonRow[];
 }
 
+/** One individual AI call, never overwritten by a later one for the same day — the fair way to
+ * see "what did the AI say an hour ago" instead of only its latest, continuously-refreshed value. */
+export interface AiPredictionSnapshot {
+  predictedAtTs: string;
+  targetDate: string;
+  predictedValue: number;
+  predictedRangeLow: number | null;
+  predictedRangeHigh: number | null;
+  sequenceInDay: number;
+  afterClose: boolean;
+}
+
 /** Head-to-head accuracy between the two live models over their most recent shared evaluated
  * days for one instrument — real recorded outcomes, not a live-updating score. sampleSize grows
  * slowly since both ledgers are young; treat small samples as not yet meaningful. */

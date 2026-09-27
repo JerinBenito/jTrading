@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Shared "which live track was closer to actual, per shared evaluated day" comparison — used by
@@ -26,11 +27,14 @@ public class ModelHeadToHeadService {
 
     private final HourlyPredictionRepository hourlyPredictionRepository;
     private final AiPredictionRepository aiPredictionRepository;
+    private final AiPredictionSnapshotRepository aiPredictionSnapshotRepository;
 
     public ModelHeadToHeadService(HourlyPredictionRepository hourlyPredictionRepository,
-                                   AiPredictionRepository aiPredictionRepository) {
+                                   AiPredictionRepository aiPredictionRepository,
+                                   AiPredictionSnapshotRepository aiPredictionSnapshotRepository) {
         this.hourlyPredictionRepository = hourlyPredictionRepository;
         this.aiPredictionRepository = aiPredictionRepository;
+        this.aiPredictionSnapshotRepository = aiPredictionSnapshotRepository;
     }
 
     /** Most recent {@code limit} days (or fewer) where both tracks have an evaluated same-day
@@ -51,16 +55,21 @@ public class ModelHeadToHeadService {
                 break;
             }
             BigDecimal detError = deterministicErrorByDate.get(p.getTargetDate());
-            if (detError == null || p.getActualPrice() == null || p.getPredictedPrice() == null) {
+            if (detError == null) {
                 continue;
             }
-            // Baseline == actual: the AI call was made after the close was known, so its "error" is
-            // a rounding-sized nudge that beats anything trivially — would hand the AI a free win.
-            if (p.getBaselineValue().compareTo(p.getActualValue()) == 0) {
+            // Compare the deterministic model's single market-open forecast against the AI's own
+            // FIRST call of the day (same information time), not the latest AiPrediction row -
+            // that one is continuously overwritten through the day and trivially converges toward
+            // the close, which would hand the AI a free win for having seen more of the day, not
+            // for being a better model. Found 2026-09-27: this was silently deciding both the
+            // leaderboard and the adaptive pick before the fix.
+            Optional<AiPredictionSnapshot> firstCall = aiPredictionSnapshotRepository
+                    .findFirstOfDay(instrument, INTRADAY_HORIZON, p.getTargetDate());
+            if (firstCall.isEmpty() || firstCall.get().isAfterClose() || firstCall.get().getErrorAbs() == null) {
                 continue;
             }
-            BigDecimal aiError = p.getActualPrice().subtract(p.getPredictedPrice()).abs();
-            days.add(new HeadToHeadDay(p.getTargetDate(), detError, aiError));
+            days.add(new HeadToHeadDay(p.getTargetDate(), detError, firstCall.get().getErrorAbs()));
         }
         return days;
     }

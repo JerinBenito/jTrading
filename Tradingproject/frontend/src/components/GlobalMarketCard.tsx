@@ -1,5 +1,5 @@
 import { View } from 'react-native';
-import { colors } from '../constants/colors';
+import { useTheme } from '../theme/ThemeContext';
 import { Card } from './ui/Card';
 import { StatTile } from './ui/StatTile';
 import type { GlobalMarketSnapshot } from '../api/types';
@@ -25,6 +25,8 @@ function formatDelta(pct: number | null) {
 /** Overnight global-market context (US indices, crude oil, USD/INR) — purely observational,
  * not wired into any prediction yet. Shown so it's visible while it accumulates real history. */
 export function GlobalMarketCard({ snapshots }: { snapshots: GlobalMarketSnapshot[] }) {
+  const { theme: colors } = useTheme();
+
   if (snapshots.length === 0) {
     return null;
   }

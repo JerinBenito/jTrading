@@ -21,11 +21,13 @@ public class ForecastPredictionController {
         this.predictionRepository = predictionRepository;
     }
 
-    /** Read-only — every prediction made, and its actual outcome once resolved. This is the URI to check in on. */
+    /** Read-only — every prediction made, and its actual outcome once resolved. This is the URI to
+     * check in on. Accepts NIFTY/BANKNIFTY or any NIFTY 50 basket trading symbol — the backend
+     * already records the same hourly + daily forecasts for the whole basket. */
     @GetMapping("/{instrument}/history")
-    public List<HourlyPrediction> history(@PathVariable Instrument instrument,
+    public List<HourlyPrediction> history(@PathVariable String instrument,
                                            @RequestParam(defaultValue = "1h") String interval) {
-        return predictionRepository.findByInstrumentAndIntervalOrderByPredictedForTsDesc(instrument.name(), interval);
+        return predictionRepository.findByInstrumentAndIntervalOrderByPredictedForTsDesc(instrument, interval);
     }
 
     /** Manual triggers — the scheduled job does this automatically every hour; these are for testing on demand. */

@@ -1,5 +1,7 @@
+import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { colors } from '../constants/colors';
+import { useTheme } from '../theme/ThemeContext';
+import type { Theme } from '../theme/tokens';
 import { Card } from './ui/Card';
 import type { CompanyFundamental } from '../api/types';
 
@@ -10,6 +12,9 @@ import type { CompanyFundamental } from '../api/types';
  * whether a given ratio being higher or lower is actually good depends on the sector and isn't
  * something to assert here. */
 export function FundamentalsCard({ ratios }: { ratios: CompanyFundamental[] }) {
+  const { theme: colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   if (ratios.length === 0) {
     return null;
   }
@@ -38,47 +43,49 @@ export function FundamentalsCard({ ratios }: { ratios: CompanyFundamental[] }) {
   );
 }
 
-const styles = StyleSheet.create({
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  headerSpacer: {
-    flex: 1.1,
-  },
-  columnHeader: {
-    flex: 1,
-    color: colors.textMuted,
-    fontSize: 10,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-    textAlign: 'right',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  ratioName: {
-    flex: 1.1,
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  companyValue: {
-    flex: 1,
-    color: colors.textPrimary,
-    fontSize: 13,
-    fontWeight: '700',
-    textAlign: 'right',
-  },
-  sectorValue: {
-    flex: 1,
-    color: colors.textMuted,
-    fontSize: 13,
-    textAlign: 'right',
-  },
-});
+function createStyles(colors: Theme) {
+  return StyleSheet.create({
+    headerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    headerSpacer: {
+      flex: 1.1,
+    },
+    columnHeader: {
+      flex: 1,
+      color: colors.textMuted,
+      fontSize: 10,
+      fontWeight: '700',
+      textTransform: 'uppercase',
+      letterSpacing: 0.4,
+      textAlign: 'right',
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 8,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+    },
+    ratioName: {
+      flex: 1.1,
+      color: colors.textSecondary,
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    companyValue: {
+      flex: 1,
+      color: colors.textPrimary,
+      fontSize: 13,
+      fontWeight: '700',
+      textAlign: 'right',
+    },
+    sectorValue: {
+      flex: 1,
+      color: colors.textMuted,
+      fontSize: 13,
+      textAlign: 'right',
+    },
+  });
+}

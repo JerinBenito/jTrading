@@ -1,7 +1,8 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors } from '../../src/constants/colors';
+import { useTheme } from '../../src/theme/ThemeContext';
+import type { Theme } from '../../src/theme/tokens';
 import { useInstrument } from '../../src/context/InstrumentContext';
 import { useApiData } from '../../src/hooks/useApiData';
 import { api } from '../../src/api/client';
@@ -14,6 +15,8 @@ import { ErrorState, LoadingState } from '../../src/components/ScreenState';
 export default function AnalysisScreen() {
   const { instrument } = useInstrument();
   const insets = useSafeAreaInsets();
+  const { theme: colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   const hourlyModel = useApiData(() => api.getModelBacktest(instrument), [instrument]);
   const hourlyBias = useApiData(() => api.getBiasCorrectionBacktest(instrument), [instrument]);
@@ -98,26 +101,28 @@ export default function AnalysisScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    padding: 16,
-    paddingBottom: 32,
-    gap: 14,
-  },
-  intro: {
-    color: colors.textMuted,
-    fontSize: 12,
-    lineHeight: 17,
-    marginTop: -6,
-  },
-  groupLabel: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '700',
-    marginTop: 6,
-  },
-});
+function createStyles(colors: Theme) {
+  return StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    content: {
+      padding: 16,
+      paddingBottom: 32,
+      gap: 14,
+    },
+    intro: {
+      color: colors.textMuted,
+      fontSize: 12,
+      lineHeight: 17,
+      marginTop: -6,
+    },
+    groupLabel: {
+      color: colors.textSecondary,
+      fontSize: 13,
+      fontWeight: '700',
+      marginTop: 6,
+    },
+  });
+}

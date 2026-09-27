@@ -2,7 +2,8 @@ import { useCallback, useMemo, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { colors } from '../../src/constants/colors';
+import { useTheme } from '../../src/theme/ThemeContext';
+import type { Theme } from '../../src/theme/tokens';
 import { useApiData } from '../../src/hooks/useApiData';
 import { api } from '../../src/api/client';
 import { ScreenHeader } from '../../src/components/ScreenHeader';
@@ -43,6 +44,8 @@ function sortSnapshots(snapshots: BasketSnapshot[], mode: SortMode) {
 
 export default function MonitorScreen() {
   const insets = useSafeAreaInsets();
+  const { theme: colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const basket = useApiData(() => api.getBasketSnapshot(), []);
   const [sortMode, setSortMode] = useState<SortMode>('vsCall');
 
@@ -89,7 +92,7 @@ export default function MonitorScreen() {
                   onPress={() => setSortMode(option.key)}
                   style={[styles.pill, selected && styles.pillSelected]}
                 >
-                  <Text style={[styles.pillLabel, selected && styles.pillLabelSelected]}>
+                  <Text style={[styles.pillLabel, selected && styles.pillLabelSelected]} numberOfLines={1}>
                     {option.label}
                   </Text>
                 </Pressable>
@@ -109,53 +112,55 @@ export default function MonitorScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    padding: 16,
-    paddingBottom: 32,
-    gap: 10,
-  },
-  header: {
-    gap: 12,
-    marginBottom: 6,
-  },
-  subtitle: {
-    color: colors.textMuted,
-    fontSize: 12,
-    lineHeight: 17,
-  },
-  sortRow: {
-    flexDirection: 'row',
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 4,
-    gap: 4,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  pill: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 9,
-    alignItems: 'center',
-  },
-  pillSelected: {
-    backgroundColor: colors.accent,
-  },
-  pillLabel: {
-    color: colors.textSecondary,
-    fontWeight: '600',
-    fontSize: 11,
-    textAlign: 'center',
-  },
-  pillLabelSelected: {
-    color: colors.textPrimary,
-  },
-  separator: {
-    height: 8,
-  },
-});
+function createStyles(colors: Theme) {
+  return StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    content: {
+      padding: 16,
+      paddingBottom: 32,
+      gap: 10,
+    },
+    header: {
+      gap: 12,
+      marginBottom: 6,
+    },
+    subtitle: {
+      color: colors.textMuted,
+      fontSize: 12,
+      lineHeight: 17,
+    },
+    sortRow: {
+      flexDirection: 'row',
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      padding: 4,
+      gap: 4,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    pill: {
+      flex: 1,
+      paddingVertical: 8,
+      borderRadius: 9,
+      alignItems: 'center',
+    },
+    pillSelected: {
+      backgroundColor: colors.accent,
+    },
+    pillLabel: {
+      color: colors.textSecondary,
+      fontWeight: '600',
+      fontSize: 11,
+      textAlign: 'center',
+    },
+    pillLabelSelected: {
+      color: colors.textPrimary,
+    },
+    separator: {
+      height: 8,
+    },
+  });
+}

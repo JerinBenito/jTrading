@@ -1,9 +1,13 @@
+import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { colors } from '../constants/colors';
+import { useTheme } from '../theme/ThemeContext';
+import type { Theme } from '../theme/tokens';
 import { useApiData } from '../hooks/useApiData';
 import { api } from '../api/client';
 
 export function HealthBadge() {
+  const { theme: colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const { data, loading, error } = useApiData(() => api.getHealth(), []);
 
   const isUp = !loading && !error && data?.status === 'UP';
@@ -18,26 +22,28 @@ export function HealthBadge() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  dot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-  },
-  label: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    fontWeight: '600',
-  },
-});
+function createStyles(colors: Theme) {
+  return StyleSheet.create({
+    container: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 20,
+    },
+    dot: {
+      width: 7,
+      height: 7,
+      borderRadius: 4,
+    },
+    label: {
+      color: colors.textSecondary,
+      fontSize: 11,
+      fontWeight: '600',
+    },
+  });
+}

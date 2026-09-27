@@ -1,6 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { colors } from '../constants/colors';
+import { useTheme } from '../theme/ThemeContext';
+import type { Theme } from '../theme/tokens';
 import { Badge } from './ui/Badge';
 import { Card } from './ui/Card';
 import type { ModelLeaderboard, PredictionComparisonRow } from '../api/types';
@@ -13,11 +15,23 @@ function formatPct(value: number) {
   return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
 }
 
+type Styles = ReturnType<typeof createStyles>;
+
 /** Price + how far it's moved from the prediction, together — never just a bare percentage. */
-function PriceWithDelta({ price, predictedPrice, color }: { price: number; predictedPrice: number; color: string }) {
+function PriceWithDelta({
+  price,
+  predictedPrice,
+  color,
+  styles,
+}: {
+  price: number;
+  predictedPrice: number;
+  color: string;
+  styles: Styles;
+}) {
   const pct = ((price - predictedPrice) / predictedPrice) * 100;
   return (
-    <Text style={styles.valueText}>
+    <Text style={styles.valueText} numberOfLines={1}>
       {formatPrice(price)} <Text style={[styles.deltaInline, { color }]}>({formatPct(pct)})</Text>
     </Text>
   );
@@ -30,6 +44,9 @@ export function PredictionComparisonTable({
   rows: PredictionComparisonRow[];
   leaderboard?: ModelLeaderboard | null;
 }) {
+  const { theme: colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   if (rows.length === 0) {
     return (
       <Card title="Model comparison">
@@ -54,13 +71,13 @@ export function PredictionComparisonTable({
       )}
 
       {rows.map((row, i) => (
-        <RowCard key={`${row.source}-${row.label}-${i}`} row={row} />
+        <RowCard key={`${row.source}-${row.label}-${i}`} row={row} colors={colors} styles={styles} />
       ))}
     </Card>
   );
 }
 
-function RowCard({ row }: { row: PredictionComparisonRow }) {
+function RowCard({ row, colors, styles }: { row: PredictionComparisonRow; colors: Theme; styles: Styles }) {
   const isAi = row.source === 'AI';
   const accentColor = isAi ? colors.ai : colors.accent;
   const isExperimental = row.label.includes('unvalidated');
@@ -83,14 +100,20 @@ function RowCard({ row }: { row: PredictionComparisonRow }) {
         />
         {isExperimental && <Badge label="NOT VALIDATED" color={colors.neutral} />}
       </View>
-      <Text style={styles.label}>{row.label}</Text>
+      <Text style={styles.label} numberOfLines={2} ellipsizeMode="tail">
+        {row.label}
+      </Text>
 
       <View style={styles.valuesRow}>
-        <Value label="Predicted" value={formatPrice(row.predictedPrice)} accent={accentColor} />
+        <Value styles={styles} label="Predicted" value={formatPrice(row.predictedPrice)} accent={accentColor} />
         {row.rangeLow !== null && row.rangeHigh !== null && (
-          <Value label={isAi ? 'Error band' : 'Range'} value={`${formatPrice(row.rangeLow)} – ${formatPrice(row.rangeHigh)}`} />
+          <Value
+            styles={styles}
+            label={isAi ? 'Error band' : 'Range'}
+            value={`${formatPrice(row.rangeLow)} – ${formatPrice(row.rangeHigh)}`}
+          />
         )}
-        {row.baselinePrice !== null && <Value label="Baseline" value={formatPrice(row.baselinePrice)} />}
+        {row.baselinePrice !== null && <Value styles={styles} label="Baseline" value={formatPrice(row.baselinePrice)} />}
         <View style={styles.valueBox}>
           <Text style={styles.valueLabel}>{row.evaluated ? 'Actual' : 'Current'}</Text>
           {referencePrice !== null && row.predictedPrice !== null ? (
@@ -98,6 +121,7 @@ function RowCard({ row }: { row: PredictionComparisonRow }) {
               price={referencePrice}
               predictedPrice={row.predictedPrice}
               color={referencePrice >= row.predictedPrice ? colors.up : colors.down}
+              styles={styles}
             />
           ) : (
             <Text style={styles.valueText}>—</Text>
@@ -137,96 +161,100 @@ function RowCard({ row }: { row: PredictionComparisonRow }) {
   );
 }
 
-function Value({ label, value, accent }: { label: string; value: string; accent?: string }) {
+function Value({ label, value, accent, styles }: { label: string; value: string; accent?: string; styles: Styles }) {
   return (
     <View style={styles.valueBox}>
       <Text style={styles.valueLabel}>{label}</Text>
-      <Text style={[styles.valueText, accent ? { color: accent } : null]}>{value}</Text>
+      <Text style={[styles.valueText, accent ? { color: accent } : null]} numberOfLines={1}>
+        {value}
+      </Text>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  empty: {
-    color: colors.textMuted,
-    fontSize: 12,
-  },
-  leaderboard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-  },
-  leaderboardText: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    flexShrink: 1,
-  },
-  row: {
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: 14,
-    padding: 12,
-    gap: 8,
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  label: {
-    color: colors.textPrimary,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  valuesRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 14,
-  },
-  valueBox: {
-    gap: 1,
-    minWidth: 70,
-  },
-  valueLabel: {
-    color: colors.textMuted,
-    fontSize: 10,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-  },
-  valueText: {
-    color: colors.textPrimary,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  deltaInline: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  footerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    flexWrap: 'wrap',
-  },
-  pendingText: {
-    color: colors.neutral,
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  resultBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
-  resultText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  detailText: {
-    color: colors.textMuted,
-    fontSize: 10,
-  },
-});
+function createStyles(colors: Theme) {
+  return StyleSheet.create({
+    empty: {
+      color: colors.textMuted,
+      fontSize: 12,
+    },
+    leaderboard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: colors.surfaceAlt,
+      borderRadius: 10,
+      paddingHorizontal: 10,
+      paddingVertical: 7,
+    },
+    leaderboardText: {
+      color: colors.textSecondary,
+      fontSize: 11,
+      flexShrink: 1,
+    },
+    row: {
+      backgroundColor: colors.surfaceAlt,
+      borderRadius: 14,
+      padding: 12,
+      gap: 8,
+    },
+    badgeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    label: {
+      color: colors.textPrimary,
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    valuesRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 14,
+    },
+    valueBox: {
+      gap: 1,
+      minWidth: 70,
+    },
+    valueLabel: {
+      color: colors.textMuted,
+      fontSize: 10,
+      fontWeight: '600',
+      textTransform: 'uppercase',
+    },
+    valueText: {
+      color: colors.textPrimary,
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    deltaInline: {
+      fontSize: 11,
+      fontWeight: '700',
+    },
+    footerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      flexWrap: 'wrap',
+    },
+    pendingText: {
+      color: colors.neutral,
+      fontSize: 11,
+      fontWeight: '600',
+    },
+    resultBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
+    },
+    resultText: {
+      fontSize: 11,
+      fontWeight: '700',
+    },
+    detailText: {
+      color: colors.textMuted,
+      fontSize: 10,
+    },
+  });
+}

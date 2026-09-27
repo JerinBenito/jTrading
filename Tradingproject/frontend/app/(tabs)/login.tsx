@@ -1,15 +1,18 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView, type WebViewNavigation } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '../../src/constants/colors';
+import { useTheme } from '../../src/theme/ThemeContext';
+import type { Theme } from '../../src/theme/tokens';
 import { useApiData } from '../../src/hooks/useApiData';
 import { api } from '../../src/api/client';
 import { ErrorState, LoadingState } from '../../src/components/ScreenState';
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
+  const { theme: colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const loginUrlQuery = useApiData(() => api.getLoginUrl(), []);
   const [status, setStatus] = useState<'idle' | 'success'>('idle');
 
@@ -57,48 +60,50 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  header: {
-    padding: 16,
-    gap: 4,
-  },
-  title: {
-    color: colors.textPrimary,
-    fontSize: 22,
-    fontWeight: '700',
-  },
-  subtitle: {
-    color: colors.textMuted,
-    fontSize: 12,
-  },
-  webview: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  successBox: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-  },
-  successText: {
-    color: colors.textPrimary,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  button: {
-    marginTop: 8,
-    backgroundColor: colors.accent,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 10,
-  },
-  buttonText: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-});
+function createStyles(colors: Theme) {
+  return StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    header: {
+      padding: 16,
+      gap: 4,
+    },
+    title: {
+      color: colors.textPrimary,
+      fontSize: 22,
+      fontWeight: '700',
+    },
+    subtitle: {
+      color: colors.textMuted,
+      fontSize: 12,
+    },
+    webview: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    successBox: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 12,
+    },
+    successText: {
+      color: colors.textPrimary,
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    button: {
+      marginTop: 8,
+      backgroundColor: colors.accent,
+      paddingHorizontal: 20,
+      paddingVertical: 10,
+      borderRadius: 10,
+    },
+    buttonText: {
+      color: '#fff',
+      fontWeight: '600',
+    },
+  });
+}

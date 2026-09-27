@@ -1,8 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
+import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Svg, {
   Circle,
   Defs,
+  G,
   Line,
   LinearGradient,
   Path,
@@ -10,8 +11,9 @@ import Svg, {
   Stop,
   Text as SvgText,
 } from 'react-native-svg';
-import { colors } from '../constants/colors';
-import type { DailyTrajectory } from '../api/types';
+import { useTheme } from '../theme/ThemeContext';
+import type { Theme } from '../theme/tokens';
+import type { AiPredictionSnapshot, DailyTrajectory } from '../api/types';
 import { areaPathD, smoothPathD } from '../utils/smoothPath';
 
 const CHART_HEIGHT = 200;
@@ -20,6 +22,11 @@ const PADDING_TOP = 28;
 const PADDING_BOTTOM = 28;
 const CHART_WIDTH = 320;
 const LIVE_BAND_WIDTH = 34;
+
+// The Indian market's regular trading session — used to place each AI call along the x-axis by
+// time of day, independent of the deterministic model's own hourly point count.
+const SESSION_START_MIN = 9 * 60 + 15;
+const SESSION_END_MIN = 15 * 60 + 30;
 
 function formatPrice(value: number, compact = false) {
   if (compact) {
@@ -36,21 +43,47 @@ function formatHour(iso: string) {
   });
 }
 
+function istMinutesSinceMidnight(iso: string) {
+  const parts = new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date(iso));
+  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
+  const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
+  return hour * 60 + minute;
+}
+
+function sessionFraction(iso: string) {
+  const mins = istMinutesSinceMidnight(iso);
+  const clamped = Math.min(Math.max(mins, SESSION_START_MIN), SESSION_END_MIN);
+  return (clamped - SESSION_START_MIN) / (SESSION_END_MIN - SESSION_START_MIN);
+}
+
+function diamondPathD(cx: number, cy: number, r: number) {
+  return `M ${cx} ${cy - r} L ${cx + r} ${cy} L ${cx} ${cy + r} L ${cx - r} ${cy} Z`;
+}
+
 export function TrajectoryChart({
   trajectory,
-  aiPredictedClose,
+  aiSnapshots,
   liveLtp,
   liveConnected,
 }: {
   trajectory: DailyTrajectory;
-  /** The AI model's predicted close for this same day, if one exists — drawn as a second
-   * reference line so it's visually comparable against the deterministic model's line. */
-  aiPredictedClose?: number | null;
+  /** Every AI call made today for this instrument, oldest first — each drawn as its own point
+   * (the call) plus a whisker (its quantile range), so an earlier call is never hidden by a
+   * later, more-informed one. */
+  aiSnapshots?: AiPredictionSnapshot[];
   /** Raw tick from the real Upstox WebSocket feed (useLiveFeed) — distinct from
    * currentEstimatedClose, which is the deterministic model's own re-anchored estimate. */
   liveLtp?: number | null;
   liveConnected?: boolean;
 }) {
+  const { theme: colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const {
     points,
     predictedClose,
@@ -70,8 +103,12 @@ export function TrajectoryChart({
     );
   }
 
+  const todaysAiCalls = (aiSnapshots ?? []).filter(
+    (s) => s.targetDate === trajectory.date && !s.afterClose
+  );
+  const hasAiCalls = todaysAiCalls.length > 0;
+
   const hasLiveEstimate = currentEstimatedClose !== null;
-  const hasAiPrediction = aiPredictedClose !== null && aiPredictedClose !== undefined;
 
   const plotWidth = CHART_WIDTH - PADDING_X * 2;
   const plotHeight = CHART_HEIGHT - PADDING_TOP - PADDING_BOTTOM;
@@ -82,7 +119,12 @@ export function TrajectoryChart({
     predictedClose,
     ...points.map((p) => p.actualClose),
     ...(hasLiveEstimate ? [currentEstimatedRangeLow!, currentEstimatedRangeHigh!] : []),
-    ...(hasAiPrediction ? [aiPredictedClose!] : []),
+    ...todaysAiCalls.flatMap((s) => [
+      s.predictedValue,
+      ...(s.predictedRangeLow !== null && s.predictedRangeHigh !== null
+        ? [s.predictedRangeLow, s.predictedRangeHigh]
+        : []),
+    ]),
   ];
   const min = Math.min(...allValues);
   const max = Math.max(...allValues);
@@ -92,6 +134,7 @@ export function TrajectoryChart({
     points.length === 1
       ? PADDING_X + plotWidth / 2
       : PADDING_X + (index / (points.length - 1)) * plotWidth;
+  const xForSession = (fraction: number) => PADDING_X + fraction * plotWidth;
   const yFor = (value: number) => PADDING_TOP + (1 - (value - min) / span) * plotHeight;
 
   const linePoints = points.map((p, i) => ({ x: xFor(i), y: yFor(p.actualClose) }));
@@ -201,18 +244,6 @@ export function TrajectoryChart({
           strokeDasharray="5,4"
         />
 
-        {hasAiPrediction && (
-          <Line
-            x1={PADDING_X}
-            y1={yFor(aiPredictedClose!)}
-            x2={CHART_WIDTH - PADDING_X}
-            y2={yFor(aiPredictedClose!)}
-            stroke={colors.ai}
-            strokeWidth={1.25}
-            strokeDasharray="2,3"
-          />
-        )}
-
         <Path d={areaPathD(linePoints, CHART_HEIGHT - PADDING_BOTTOM)} fill={`url(#${gradientId})`} />
         <Path d={smoothPathD(linePoints)} fill="none" stroke={lineColor} strokeWidth={2.75} strokeLinecap="round" />
 
@@ -228,6 +259,31 @@ export function TrajectoryChart({
               stroke={lineColor}
               strokeWidth={isLast ? 0 : 1.5}
             />
+          );
+        })}
+
+        {/* Every AI call today: a whisker for its quantile range, a diamond for the point call
+         * on top of it — visually distinct from the actual-price circles and from each other, so
+         * an earlier call (e.g. "AI said 152 an hour ago") stays visible once a later one exists. */}
+        {todaysAiCalls.map((snap) => {
+          const x = xForSession(sessionFraction(snap.predictedAtTs));
+          const hasRange = snap.predictedRangeLow !== null && snap.predictedRangeHigh !== null;
+          return (
+            <G key={snap.predictedAtTs}>
+              {hasRange && (
+                <Line
+                  x1={x}
+                  y1={yFor(snap.predictedRangeLow!)}
+                  x2={x}
+                  y2={yFor(snap.predictedRangeHigh!)}
+                  stroke={colors.ai}
+                  strokeOpacity={0.5}
+                  strokeWidth={3}
+                  strokeLinecap="round"
+                />
+              )}
+              <Path d={diamondPathD(x, yFor(snap.predictedValue), 3.5)} fill={colors.ai} />
+            </G>
           );
         })}
 
@@ -253,18 +309,6 @@ export function TrajectoryChart({
           predicted {formatPrice(predictedClose, true)}
         </SvgText>
 
-        {hasAiPrediction && (
-          <SvgText
-            x={CHART_WIDTH - PADDING_X}
-            y={yFor(aiPredictedClose!) - 6}
-            fill={colors.ai}
-            fontSize={10}
-            textAnchor="end"
-          >
-            AI {formatPrice(aiPredictedClose!, true)}
-          </SvgText>
-        )}
-
         <SvgText x={xFor(0)} y={CHART_HEIGHT - 8} fill={colors.textMuted} fontSize={10} textAnchor="start">
           {formatHour(points[0].ts)}
         </SvgText>
@@ -280,11 +324,12 @@ export function TrajectoryChart({
       </Svg>
 
       <View style={styles.legendRow}>
-        <LegendItem colorSwatch={lineColor} label="Actual price" />
-        <LegendItem dashed label="Morning prediction" />
-        <LegendItem boxSwatch={colors.surfaceAlt} label="Morning range" />
-        {hasLiveEstimate && <LegendItem boxSwatch={colors.accent} label="Live range" />}
-        {hasAiPrediction && <LegendItem dashed dashColor={colors.ai} label="AI prediction" />}
+        <LegendItem styles={styles} colorSwatch={lineColor} label="Actual price" />
+        <LegendItem styles={styles} dashed label="Morning prediction" />
+        <LegendItem styles={styles} boxSwatch={colors.surfaceAlt} label="Morning range" />
+        {hasLiveEstimate && <LegendItem styles={styles} boxSwatch={colors.accent} accentBox label="Live range" />}
+        {hasAiCalls && <LegendItem styles={styles} diamondSwatch={colors.ai} label="AI point call" />}
+        {hasAiCalls && <LegendItem styles={styles} barSwatch={colors.ai} label="AI quantile range" />}
       </View>
     </View>
   );
@@ -293,170 +338,193 @@ export function TrajectoryChart({
 function LegendItem({
   colorSwatch,
   boxSwatch,
+  accentBox,
   dashed,
-  dashColor,
+  diamondSwatch,
+  barSwatch,
   label,
+  styles,
 }: {
   colorSwatch?: string;
   boxSwatch?: string;
+  accentBox?: boolean;
   dashed?: boolean;
-  dashColor?: string;
+  diamondSwatch?: string;
+  barSwatch?: string;
   label: string;
+  styles: ReturnType<typeof createStyles>;
 }) {
   return (
     <View style={styles.legendItem}>
       {colorSwatch && <View style={[styles.legendDot, { backgroundColor: colorSwatch }]} />}
-      {boxSwatch && <View style={[styles.legendBox, { backgroundColor: boxSwatch, opacity: boxSwatch === colors.accent ? 0.5 : 1 }]} />}
-      {dashed && <View style={[styles.legendDash, dashColor ? { borderColor: dashColor } : null]} />}
+      {boxSwatch && <View style={[styles.legendBox, { backgroundColor: boxSwatch, opacity: accentBox ? 0.5 : 1 }]} />}
+      {dashed && <View style={styles.legendDash} />}
+      {diamondSwatch && (
+        <View style={[styles.legendDiamond, { backgroundColor: diamondSwatch }]} />
+      )}
+      {barSwatch && <View style={[styles.legendBar, { backgroundColor: barSwatch }]} />}
       <Text style={styles.legendLabel}>{label}</Text>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 18,
-    padding: 16,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18,
-    shadowRadius: 10,
-    elevation: 3,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  title: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  headerRightRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  liveTickPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(62, 207, 142, 0.14)',
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  liveTickDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.up,
-  },
-  liveTickText: {
-    color: colors.up,
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  deviationPill: {
-    backgroundColor: colors.surfaceAlt,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  deviationText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  deviationPct: {
-    fontWeight: '600',
-    opacity: 0.85,
-  },
-  empty: {
-    color: colors.textMuted,
-    fontSize: 13,
-  },
-  liveCard: {
-    backgroundColor: 'rgba(91, 140, 255, 0.1)',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(91, 140, 255, 0.35)',
-    padding: 12,
-    gap: 3,
-  },
-  liveHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  liveDotRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  liveDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: colors.accent,
-  },
-  liveLabel: {
-    color: colors.accent,
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-  liveDelta: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  liveValue: {
-    color: colors.textPrimary,
-    fontSize: 24,
-    fontWeight: '800',
-    letterSpacing: -0.5,
-  },
-  liveRange: {
-    color: colors.textSecondary,
-    fontSize: 12,
-  },
-  legendRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 16,
-    marginTop: 2,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  legendDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  legendBox: {
-    width: 10,
-    height: 8,
-    borderRadius: 2,
-  },
-  legendDash: {
-    width: 10,
-    height: 0,
-    borderTopWidth: 1.5,
-    borderStyle: 'dashed',
-    borderColor: colors.textMuted,
-  },
-  legendLabel: {
-    color: colors.textMuted,
-    fontSize: 11,
-  },
-});
+function createStyles(colors: Theme) {
+  return StyleSheet.create({
+    card: {
+      backgroundColor: colors.surface,
+      borderRadius: 18,
+      padding: 16,
+      gap: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.18,
+      shadowRadius: 10,
+      elevation: 3,
+    },
+    headerRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    title: {
+      color: colors.textSecondary,
+      fontSize: 13,
+      fontWeight: '700',
+      textTransform: 'uppercase',
+      letterSpacing: 0.6,
+    },
+    headerRightRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    liveTickPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: 'rgba(62, 207, 142, 0.14)',
+      paddingHorizontal: 7,
+      paddingVertical: 3,
+      borderRadius: 8,
+    },
+    liveTickDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: colors.up,
+    },
+    liveTickText: {
+      color: colors.up,
+      fontSize: 11,
+      fontWeight: '700',
+    },
+    deviationPill: {
+      backgroundColor: colors.surfaceAlt,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 8,
+    },
+    deviationText: {
+      fontSize: 12,
+      fontWeight: '700',
+    },
+    deviationPct: {
+      fontWeight: '600',
+      opacity: 0.85,
+    },
+    empty: {
+      color: colors.textMuted,
+      fontSize: 13,
+    },
+    liveCard: {
+      backgroundColor: 'rgba(91, 140, 255, 0.1)',
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: 'rgba(91, 140, 255, 0.35)',
+      padding: 12,
+      gap: 3,
+    },
+    liveHeaderRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    liveDotRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    liveDot: {
+      width: 7,
+      height: 7,
+      borderRadius: 4,
+      backgroundColor: colors.accent,
+    },
+    liveLabel: {
+      color: colors.accent,
+      fontSize: 11,
+      fontWeight: '700',
+      textTransform: 'uppercase',
+      letterSpacing: 0.4,
+    },
+    liveDelta: {
+      fontSize: 11,
+      fontWeight: '700',
+    },
+    liveValue: {
+      color: colors.textPrimary,
+      fontSize: 24,
+      fontWeight: '800',
+      letterSpacing: -0.5,
+    },
+    liveRange: {
+      color: colors.textSecondary,
+      fontSize: 12,
+    },
+    legendRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 16,
+      marginTop: 2,
+    },
+    legendItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+    },
+    legendDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+    },
+    legendBox: {
+      width: 10,
+      height: 8,
+      borderRadius: 2,
+    },
+    legendDash: {
+      width: 10,
+      height: 0,
+      borderTopWidth: 1.5,
+      borderStyle: 'dashed',
+      borderColor: colors.textMuted,
+    },
+    legendDiamond: {
+      width: 7,
+      height: 7,
+      transform: [{ rotate: '45deg' }],
+    },
+    legendBar: {
+      width: 3,
+      height: 10,
+      borderRadius: 1.5,
+      opacity: 0.6,
+    },
+    legendLabel: {
+      color: colors.textMuted,
+      fontSize: 11,
+    },
+  });
+}

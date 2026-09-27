@@ -1,5 +1,6 @@
 import { API_BASE_URL, Instrument } from '../constants/config';
 import type {
+  AiPredictionSnapshot,
   BacktestResult,
   BasketSnapshot,
   CompanyFundamental,
@@ -26,7 +27,9 @@ async function getJson<T>(path: string): Promise<T> {
 export const api = {
   getHealth: () => getJson<HealthStatus>('/actuator/health'),
 
-  getForecastHistory: (instrument: Instrument, interval: '1h' | '1d') =>
+  /** `instrument` accepts NIFTY/BANKNIFTY or any NIFTY 50 basket trading symbol — the backend
+   * records the same hourly + daily deterministic forecasts for the whole basket already. */
+  getForecastHistory: (instrument: string, interval: '1h' | '1d') =>
     getJson<Prediction[]>(`/api/forecast/${instrument}/history?interval=${interval}`),
 
   /** Undefined date = today (IST), matching the backend's default. Returns null if no prediction exists yet for that day.
@@ -94,4 +97,10 @@ export const api = {
   /** Most recent known overnight read per symbol (SP500, DOW, NASDAQ, CRUDE_OIL, USD_INR). */
   getGlobalMarketLatest: () =>
     getJson<GlobalMarketSnapshot[]>('/api/global-market/latest'),
+
+  /** Every individual AI call for this instrument+horizon, oldest first — the per-call history
+   * behind the trajectory chart's point + quantile-range markers (never overwritten, unlike the
+   * "latest call" the comparison table shows). */
+  getAiPredictionSnapshots: (instrument: string, horizon: string = 'INTRADAY') =>
+    getJson<AiPredictionSnapshot[]>(`/api/ai-predictions/${instrument}/snapshots?horizon=${horizon}`),
 };

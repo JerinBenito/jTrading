@@ -1,6 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { colors } from '../constants/colors';
+import { useTheme } from '../theme/ThemeContext';
+import type { Theme } from '../theme/tokens';
 import type { RangeCalibrationStatus } from '../api/types';
 
 export function RangeCalibrationRow({
@@ -10,6 +12,9 @@ export function RangeCalibrationRow({
   hourly: RangeCalibrationStatus | null;
   daily: RangeCalibrationStatus | null;
 }) {
+  const { theme: colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   return (
     <View style={styles.card}>
       <View style={styles.titleRow}>
@@ -18,15 +23,25 @@ export function RangeCalibrationRow({
       </View>
       <Text style={styles.subtitle}>self-tuning width multiplier, from real hit-rate</Text>
       <View style={styles.row}>
-        <Cell label="Hourly" status={hourly} />
+        <Cell label="Hourly" status={hourly} colors={colors} styles={styles} />
         <View style={styles.divider} />
-        <Cell label="Daily" status={daily} />
+        <Cell label="Daily" status={daily} colors={colors} styles={styles} />
       </View>
     </View>
   );
 }
 
-function Cell({ label, status }: { label: string; status: RangeCalibrationStatus | null }) {
+function Cell({
+  label,
+  status,
+  colors,
+  styles,
+}: {
+  label: string;
+  status: RangeCalibrationStatus | null;
+  colors: Theme;
+  styles: ReturnType<typeof createStyles>;
+}) {
   const multiplier = status?.multiplier ?? 1;
   const widened = multiplier > 1.005;
   const narrowed = multiplier < 0.995;
@@ -44,62 +59,64 @@ function Cell({ label, status }: { label: string; status: RangeCalibrationStatus
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 18,
-    padding: 16,
-    gap: 4,
-    borderWidth: 1,
-    borderColor: colors.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18,
-    shadowRadius: 10,
-    elevation: 3,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  title: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  subtitle: {
-    color: colors.textMuted,
-    fontSize: 11,
-    marginBottom: 8,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  divider: {
-    width: 1,
-    height: 36,
-    backgroundColor: colors.border,
-    marginHorizontal: 16,
-  },
-  cell: {
-    flex: 1,
-  },
-  cellLabel: {
-    color: colors.textMuted,
-    fontSize: 12,
-  },
-  cellValueRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
-  },
-  cellValue: {
-    fontSize: 20,
-    fontWeight: '800',
-  },
-});
+function createStyles(colors: Theme) {
+  return StyleSheet.create({
+    card: {
+      backgroundColor: colors.surface,
+      borderRadius: 18,
+      padding: 16,
+      gap: 4,
+      borderWidth: 1,
+      borderColor: colors.border,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.18,
+      shadowRadius: 10,
+      elevation: 3,
+    },
+    titleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    title: {
+      color: colors.textSecondary,
+      fontSize: 12,
+      fontWeight: '700',
+      textTransform: 'uppercase',
+      letterSpacing: 0.6,
+    },
+    subtitle: {
+      color: colors.textMuted,
+      fontSize: 11,
+      marginBottom: 8,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    divider: {
+      width: 1,
+      height: 36,
+      backgroundColor: colors.border,
+      marginHorizontal: 16,
+    },
+    cell: {
+      flex: 1,
+    },
+    cellLabel: {
+      color: colors.textMuted,
+      fontSize: 12,
+    },
+    cellValueRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      marginTop: 2,
+    },
+    cellValue: {
+      fontSize: 20,
+      fontWeight: '800',
+    },
+  });
+}

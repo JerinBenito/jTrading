@@ -1,5 +1,7 @@
+import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { colors } from '../constants/colors';
+import { useTheme } from '../theme/ThemeContext';
+import type { Theme } from '../theme/tokens';
 import type { SignalHistoryEntry } from '../api/types';
 
 function formatTime(iso: string) {
@@ -17,6 +19,8 @@ function patternLabel(patternId: string) {
 }
 
 export function SignalListItem({ signal }: { signal: SignalHistoryEntry }) {
+  const { theme: colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const resolved = signal.actualDirection !== null;
   const correct = resolved && signal.actualDirection === signal.predictedDirection;
   const directionColor = signal.predictedDirection === 'up' ? colors.up : colors.down;
@@ -25,8 +29,10 @@ export function SignalListItem({ signal }: { signal: SignalHistoryEntry }) {
     <View style={styles.row}>
       <View style={[styles.directionDot, { backgroundColor: directionColor }]} />
       <View style={styles.body}>
-        <Text style={styles.pattern}>{patternLabel(signal.patternId)}</Text>
-        <Text style={styles.meta}>
+        <Text style={styles.pattern} numberOfLines={1} ellipsizeMode="tail">
+          {patternLabel(signal.patternId)}
+        </Text>
+        <Text style={styles.meta} numberOfLines={1} ellipsizeMode="tail">
           {signal.predictedDirection.toUpperCase()} · {signal.confidenceTier} confidence ·{' '}
           {signal.sampleSize} sample · {formatTime(signal.ts)}
         </Text>
@@ -50,55 +56,59 @@ export function SignalListItem({ signal }: { signal: SignalHistoryEntry }) {
   );
 }
 
-const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    padding: 14,
-    gap: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.14,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  directionDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  body: {
-    flex: 1,
-    gap: 2,
-  },
-  pattern: {
-    color: colors.textPrimary,
-    fontSize: 14,
-    fontWeight: '600',
-    textTransform: 'capitalize',
-  },
-  meta: {
-    color: colors.textMuted,
-    fontSize: 11,
-  },
-  outcome: {
-    alignItems: 'flex-end',
-  },
-  outcomeText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  moveText: {
-    color: colors.textSecondary,
-    fontSize: 11,
-  },
-  pendingText: {
-    color: colors.neutral,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-});
+function createStyles(colors: Theme) {
+  return StyleSheet.create({
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      borderRadius: 14,
+      padding: 14,
+      gap: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.14,
+      shadowRadius: 6,
+      elevation: 2,
+    },
+    directionDot: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+    },
+    body: {
+      flex: 1,
+      minWidth: 0,
+      gap: 2,
+    },
+    pattern: {
+      color: colors.textPrimary,
+      fontSize: 14,
+      fontWeight: '600',
+      textTransform: 'capitalize',
+    },
+    meta: {
+      color: colors.textMuted,
+      fontSize: 11,
+    },
+    outcome: {
+      alignItems: 'flex-end',
+      flexShrink: 0,
+    },
+    outcomeText: {
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    moveText: {
+      color: colors.textSecondary,
+      fontSize: 11,
+    },
+    pendingText: {
+      color: colors.neutral,
+      fontSize: 12,
+      fontWeight: '600',
+    },
+  });
+}

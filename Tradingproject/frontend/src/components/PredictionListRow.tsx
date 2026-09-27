@@ -1,5 +1,7 @@
+import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { colors } from '../constants/colors';
+import { useTheme } from '../theme/ThemeContext';
+import type { Theme } from '../theme/tokens';
 import type { Prediction } from '../api/types';
 
 function formatTime(iso: string) {
@@ -15,6 +17,8 @@ function formatPrice(value: number) {
 }
 
 export function PredictionListRow({ prediction }: { prediction: Prediction }) {
+  const { theme: colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const isEvaluated = prediction.actualClose !== null;
   const covered =
     isEvaluated &&
@@ -33,7 +37,7 @@ export function PredictionListRow({ prediction }: { prediction: Prediction }) {
       />
       <View style={styles.body}>
         <Text style={styles.time}>{formatTime(prediction.predictedForTs)}</Text>
-        <Text style={styles.predicted}>
+        <Text style={styles.predicted} numberOfLines={1} ellipsizeMode="tail">
           predicted {formatPrice(prediction.predictedClose)}
           {hasBiasCorrection && (
             <Text style={styles.correction}>
@@ -61,55 +65,59 @@ export function PredictionListRow({ prediction }: { prediction: Prediction }) {
   );
 }
 
-const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  body: {
-    flex: 1,
-    gap: 2,
-  },
-  time: {
-    color: colors.textMuted,
-    fontSize: 11,
-  },
-  predicted: {
-    color: colors.textPrimary,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  correction: {
-    color: colors.textMuted,
-    fontSize: 11,
-    fontWeight: '400',
-  },
-  result: {
-    alignItems: 'flex-end',
-  },
-  actual: {
-    color: colors.textPrimary,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  errorPct: {
-    fontSize: 11,
-  },
-  pending: {
-    color: colors.neutral,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-});
+function createStyles(colors: Theme) {
+  return StyleSheet.create({
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      gap: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    statusDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+    },
+    body: {
+      flex: 1,
+      minWidth: 0,
+      gap: 2,
+    },
+    time: {
+      color: colors.textMuted,
+      fontSize: 11,
+    },
+    predicted: {
+      color: colors.textPrimary,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    correction: {
+      color: colors.textMuted,
+      fontSize: 11,
+      fontWeight: '400',
+    },
+    result: {
+      alignItems: 'flex-end',
+      flexShrink: 0,
+    },
+    actual: {
+      color: colors.textPrimary,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    errorPct: {
+      fontSize: 11,
+    },
+    pending: {
+      color: colors.neutral,
+      fontSize: 12,
+      fontWeight: '600',
+    },
+  });
+}

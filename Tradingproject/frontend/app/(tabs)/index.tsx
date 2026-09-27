@@ -1,7 +1,8 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors } from '../../src/constants/colors';
+import { useTheme } from '../../src/theme/ThemeContext';
+import type { Theme } from '../../src/theme/tokens';
 import { useInstrument } from '../../src/context/InstrumentContext';
 import { useApiData } from '../../src/hooks/useApiData';
 import { useLiveFeed } from '../../src/hooks/useLiveFeed';
@@ -19,6 +20,8 @@ import { EmptyState, ErrorState, LoadingState } from '../../src/components/Scree
 export default function DashboardScreen() {
   const { instrument } = useInstrument();
   const insets = useSafeAreaInsets();
+  const { theme: colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   const daily = useApiData(() => api.getForecastHistory(instrument, '1d'), [instrument]);
   const hourly = useApiData(() => api.getForecastHistory(instrument, '1h'), [instrument]);
@@ -28,6 +31,7 @@ export default function DashboardScreen() {
   const comparison = useApiData(() => api.getPredictionComparison(instrument), [instrument]);
   const leaderboard = useApiData(() => api.getModelLeaderboard(instrument), [instrument]);
   const globalMarket = useApiData(() => api.getGlobalMarketLatest(), []);
+  const aiSnapshots = useApiData(() => api.getAiPredictionSnapshots(instrument), [instrument]);
   const live = useLiveFeed(instrument);
 
   const [manualRefreshing, setManualRefreshing] = useState(false);
@@ -41,6 +45,7 @@ export default function DashboardScreen() {
     comparison.refresh();
     leaderboard.refresh();
     globalMarket.refresh();
+    aiSnapshots.refresh();
     setTimeout(() => setManualRefreshing(false), 600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [instrument]);
@@ -49,7 +54,6 @@ export default function DashboardScreen() {
   const latestHourly = hourly.data?.[0] ?? null;
   const loading = daily.loading && hourly.loading;
   const firstError = daily.error ?? hourly.error;
-  const aiIntradayRow = comparison.data?.rows.find((r) => r.source === 'AI' && r.label === 'AI same-day close');
 
   return (
     <ScrollView
@@ -84,7 +88,7 @@ export default function DashboardScreen() {
             <>
               <TrajectoryChart
                 trajectory={trajectory.data}
-                aiPredictedClose={aiIntradayRow?.predictedPrice}
+                aiSnapshots={aiSnapshots.data ?? []}
                 liveLtp={live.ltp}
                 liveConnected={live.connected}
               />
@@ -111,19 +115,21 @@ export default function DashboardScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    padding: 16,
-    paddingBottom: 32,
-    gap: 14,
-  },
-  liveErrorText: {
-    color: colors.textMuted,
-    fontSize: 11,
-    marginTop: -6,
-  },
-});
+function createStyles(colors: Theme) {
+  return StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    content: {
+      padding: 16,
+      paddingBottom: 32,
+      gap: 14,
+    },
+    liveErrorText: {
+      color: colors.textMuted,
+      fontSize: 11,
+      marginTop: -6,
+    },
+  });
+}
