@@ -26,6 +26,11 @@ public record SupplementaryFeatures(
         Double globalSp500ChangePct,
         Double globalCrudeOilChangePct,
         Double globalUsdInrChangePct,
+        /** India VIX's own level (not % change) - backtested against 2 years of real data before
+         * being added 2026-09-28: the level itself, not its daily change, is what predicts
+         * NIFTY's forward return (see GlobalMarketDataService's comment for the real numbers).
+         * Same market-wide value broadcast to every instrument, same as the other global fields. */
+        Double globalIndiaVixLevel,
         /** Current fundamentals (P/E, ROE), applied uniformly to every historical row for this
          * instrument — NOT a real point-in-time value on older rows (we only keep the latest
          * known fundamentals, not a historical series), so this carries mild lookahead bias on
@@ -66,5 +71,5 @@ public record SupplementaryFeatures(
         Double aiPriorDayFirstCallErrorPct
 ) {
     static final SupplementaryFeatures EMPTY = new SupplementaryFeatures(
-            null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+            null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
 }

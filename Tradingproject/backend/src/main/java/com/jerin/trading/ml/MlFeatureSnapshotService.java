@@ -150,6 +150,7 @@ public class MlFeatureSnapshotService {
         builder.globalSp500ChangePct(toBigDecimal(dayFeatures.globalSp500ChangePct()));
         builder.globalCrudeOilChangePct(toBigDecimal(dayFeatures.globalCrudeOilChangePct()));
         builder.globalUsdInrChangePct(toBigDecimal(dayFeatures.globalUsdInrChangePct()));
+        builder.globalIndiaVixLevel(toBigDecimal(dayFeatures.globalIndiaVixLevel()));
         builder.fundamentalPe(toBigDecimal(dayFeatures.fundamentalPe()));
         builder.fundamentalRoe(toBigDecimal(dayFeatures.fundamentalRoe()));
         builder.recentPatternWinRate(toBigDecimal(dayFeatures.recentPatternWinRate()));

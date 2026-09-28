@@ -27,6 +27,7 @@ public record LiveFeatureSnapshot(
         Double globalSp500ChangePct,
         Double globalCrudeOilChangePct,
         Double globalUsdInrChangePct,
+        Double globalIndiaVixLevel,
         Double fundamentalPe,
         Double fundamentalRoe,
         Double recentPatternWinRate,

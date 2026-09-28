@@ -113,6 +113,8 @@ public class MlFeatureSnapshot {
     private BigDecimal globalCrudeOilChangePct;
     @Column(name = "global_usd_inr_change_pct", precision = 10, scale = 4)
     private BigDecimal globalUsdInrChangePct;
+    @Column(name = "global_india_vix_level", precision = 10, scale = 4)
+    private BigDecimal globalIndiaVixLevel;
     @Column(name = "fundamental_pe", precision = 10, scale = 4)
     private BigDecimal fundamentalPe;
     @Column(name = "fundamental_roe", precision = 10, scale = 4)

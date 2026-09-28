@@ -78,6 +78,7 @@ public class SupplementaryFeatureService {
                 globalChangeByDay("SP500"),
                 globalChangeByDay("CRUDE_OIL"),
                 globalChangeByDay("USD_INR"),
+                globalLevelByDay("INDIA_VIX"),
                 fundamentalValue(instrument, "P/E"),
                 fundamentalValue(instrument, "ROE"),
                 mostRecentSignalByDay(instrument),
@@ -192,6 +193,7 @@ public class SupplementaryFeatureService {
         private final NavigableMap<LocalDate, Double> sp500ByDay;
         private final NavigableMap<LocalDate, Double> crudeOilByDay;
         private final NavigableMap<LocalDate, Double> usdInrByDay;
+        private final NavigableMap<LocalDate, Double> vixByDay;
         private final Double fundamentalPe;
         private final Double fundamentalRoe;
         private final NavigableMap<LocalDate, SignalPrediction> patternByDay;
@@ -207,6 +209,7 @@ public class SupplementaryFeatureService {
                          NavigableMap<LocalDate, Double> sp500ByDay,
                          NavigableMap<LocalDate, Double> crudeOilByDay,
                          NavigableMap<LocalDate, Double> usdInrByDay,
+                         NavigableMap<LocalDate, Double> vixByDay,
                          Double fundamentalPe, Double fundamentalRoe,
                          NavigableMap<LocalDate, SignalPrediction> patternByDay,
                          NavigableMap<LocalDate, AiErrorInfo> aiErrorByDay,
@@ -220,6 +223,7 @@ public class SupplementaryFeatureService {
             this.sp500ByDay = sp500ByDay;
             this.crudeOilByDay = crudeOilByDay;
             this.usdInrByDay = usdInrByDay;
+            this.vixByDay = vixByDay;
             this.fundamentalPe = fundamentalPe;
             this.fundamentalRoe = fundamentalRoe;
             this.patternByDay = patternByDay;
@@ -284,6 +288,7 @@ public class SupplementaryFeatureService {
                     floorValue(sp500ByDay, day),
                     floorValue(crudeOilByDay, day),
                     floorValue(usdInrByDay, day),
+                    floorValue(vixByDay, day),
                     fundamentalPe,
                     fundamentalRoe,
                     patternWinRate,
@@ -351,6 +356,18 @@ public class SupplementaryFeatureService {
         for (GlobalMarketSnapshot s : globalMarketSnapshotRepository.findRecentBySymbol(symbol)) {
             if (s.getChangePct() != null) {
                 result.put(s.getTradingDate(), s.getChangePct().doubleValue());
+            }
+        }
+        return result;
+    }
+
+    /** Same as {@link #globalChangeByDay} but the raw level, not the day's % change — India VIX's
+     * level is what backtested as predictive, not its daily change (see GlobalMarketDataService). */
+    private NavigableMap<LocalDate, Double> globalLevelByDay(String symbol) {
+        NavigableMap<LocalDate, Double> result = new TreeMap<>();
+        for (GlobalMarketSnapshot s : globalMarketSnapshotRepository.findRecentBySymbol(symbol)) {
+            if (s.getPrice() != null) {
+                result.put(s.getTradingDate(), s.getPrice().doubleValue());
             }
         }
         return result;

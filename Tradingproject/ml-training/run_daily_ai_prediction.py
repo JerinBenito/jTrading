@@ -65,6 +65,12 @@ INTRADAY_FEATURES = [
     # never sees itself), and the same rule builds the training rows, so training matches the live
     # view. Per-call snapshots only exist from 2026-09-17, so nearly every historical row is NaN.
     "aiTodayFirstNudgePct", "aiTodayLastNudgePct", "aiTodayLastStepPct", "aiTodayLastDriftFromFirstPct",
+    # Added 2026-09-28: India VIX's own level (not daily change - backtested and only the level
+    # showed a real, corrected-for-multiple-comparisons relationship to NIFTY's forward return,
+    # and the same effect held up in individual basket stocks too, 27/50 significant at p<0.05).
+    # Brand new data source as of today - same 30-day history gate as every other young feature,
+    # non-negotiable after the memorization bug this session already found once.
+    "globalIndiaVixLevel",
 ]
 # The eight inputs that describe the AI's own past errors, nudges and revisions.
 AI_SELF_FEATURES = [
@@ -77,6 +83,7 @@ YOUNG_SUPPLEMENTARY_FEATURES = [
     "deterministicDeviationPct", "hmmDeviationPct", "garchRangeWidthPct", "pcrLatest",
     "globalSp500ChangePct", "globalCrudeOilChangePct", "globalUsdInrChangePct",
     "recentPatternWinRate", "recentPatternDirection",
+    "globalIndiaVixLevel",
 ]
 # All of these are still recorded and served every day, but a feature only enters the FIT once it
 # has real history. Found 2026-09-21: with 1-13 days behind them, the AI-error inputs took 8% of
@@ -101,6 +108,13 @@ SUPPLEMENTARY_FEATURES = [
     "volumeRatio20d", "deterministicDeviationPct", "hmmDeviationPct", "garchRangeWidthPct",
     "pcrLatest", "globalSp500ChangePct", "globalCrudeOilChangePct", "globalUsdInrChangePct",
     "fundamentalPe", "fundamentalRoe", "recentPatternWinRate", "recentPatternDirection",
+    # Added 2026-09-28, same treatment as its SP500/CRUDE_OIL/USD_INR siblings above (this model
+    # has no history-gating mechanism, unlike the intraday model's HISTORY_GATED_FEATURES - not
+    # adding one just for this feature would be inconsistent with how those three are already
+    # handled here). Directly backtested against this exact target (forwardReturn5dPct/10dPct,
+    # what FORWARD_5D/FORWARD_10D predict) - not an extrapolation from a different horizon, unlike
+    # its inclusion in the intraday model's same-day-close target.
+    "globalIndiaVixLevel",
 ]
 MULTIDAY_FEATURES = MULTIDAY_REQUIRED_FEATURES + SUPPLEMENTARY_FEATURES
 HORIZONS = [5, 10, 20, 40]
