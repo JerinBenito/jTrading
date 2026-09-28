@@ -7,6 +7,7 @@ import com.jerin.trading.broker.OptionChainEntry;
 import com.jerin.trading.broker.upstox.dto.UpstoxCandleResponse;
 import com.jerin.trading.broker.upstox.dto.UpstoxInstrumentSearchResponse;
 import com.jerin.trading.broker.upstox.dto.UpstoxKeyRatiosResponse;
+import com.jerin.trading.broker.upstox.dto.UpstoxMarketQuoteResponse;
 import com.jerin.trading.broker.upstox.dto.UpstoxOptionChainResponse;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -168,6 +169,49 @@ public class UpstoxBrokerClient implements BrokerClient {
                 .filter(row -> "EQ".equals(row.instrumentType()))
                 .filter(row -> tradingSymbol.equalsIgnoreCase(row.tradingSymbol()))
                 .findFirst();
+    }
+
+    @Override
+    public List<MarketQuote> getMarketQuotes(List<String> instrumentKeys) {
+        if (instrumentKeys.isEmpty()) {
+            return List.of();
+        }
+        UpstoxMarketQuoteResponse response = restClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/v3/market-quote/quotes")
+                        .queryParam("instrument_key", String.join(",", instrumentKeys))
+                        .build())
+                .retrieve()
+                .body(UpstoxMarketQuoteResponse.class);
+
+        if (response == null || response.data() == null) {
+            return List.of();
+        }
+        return response.data().entrySet().stream()
+                .filter(entry -> entry.getValue() != null)
+                .map(entry -> toMarketQuote(entry.getKey(), entry.getValue()))
+                .toList();
+    }
+
+    /** {@code mapKey} looks like "NSE_EQ:RELIANCE" — used as a fallback when the row's own
+     * {@code symbol} field is blank, rather than trust it unconditionally. */
+    private MarketQuote toMarketQuote(String mapKey, UpstoxMarketQuoteResponse.Quote quote) {
+        String symbol = quote.symbol() != null && !quote.symbol().isBlank()
+                ? quote.symbol()
+                : mapKey.substring(mapKey.indexOf(':') + 1);
+        var depth = quote.depth();
+        var topBid = depth != null && depth.buy() != null && !depth.buy().isEmpty() ? depth.buy().get(0) : null;
+        var topAsk = depth != null && depth.sell() != null && !depth.sell().isEmpty() ? depth.sell().get(0) : null;
+        return new MarketQuote(
+                symbol,
+                quote.lastPrice(),
+                quote.totalBuyQuantity(),
+                quote.totalSellQuantity(),
+                topBid != null ? topBid.price() : null,
+                topBid != null ? topBid.quantity() : null,
+                topAsk != null ? topAsk.price() : null,
+                topAsk != null ? topAsk.quantity() : null
+        );
     }
 
     @Override

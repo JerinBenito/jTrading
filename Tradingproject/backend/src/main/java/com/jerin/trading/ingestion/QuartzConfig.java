@@ -31,7 +31,8 @@ public class QuartzConfig {
                                          AiPredictionService aiPredictionService,
                                          AdaptiveSelectionService adaptiveSelectionService,
                                          DailyHmmPredictionService dailyHmmPredictionService,
-                                         DailyGarchPredictionService dailyGarchPredictionService) {
+                                         DailyGarchPredictionService dailyGarchPredictionService,
+                                         MarketDepthIngestionService marketDepthIngestionService) {
         JobDataMap jobDataMap = new JobDataMap();
         jobDataMap.put("ingestionService", ingestionService);
         jobDataMap.put("signalService", signalService);
@@ -44,6 +45,7 @@ public class QuartzConfig {
         jobDataMap.put("adaptiveSelectionService", adaptiveSelectionService);
         jobDataMap.put("dailyHmmPredictionService", dailyHmmPredictionService);
         jobDataMap.put("dailyGarchPredictionService", dailyGarchPredictionService);
+        jobDataMap.put("marketDepthIngestionService", marketDepthIngestionService);
         return JobBuilder.newJob(IngestionJob.class)
                 .withIdentity("ingestionJob")
                 .usingJobData(jobDataMap)

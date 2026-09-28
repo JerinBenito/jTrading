@@ -44,6 +44,7 @@ public class IngestionJob implements Job {
     private AdaptiveSelectionService adaptiveSelectionService;
     private DailyHmmPredictionService dailyHmmPredictionService;
     private DailyGarchPredictionService dailyGarchPredictionService;
+    private MarketDepthIngestionService marketDepthIngestionService;
 
     public void setIngestionService(IngestionService ingestionService) {
         this.ingestionService = ingestionService;
@@ -71,6 +72,10 @@ public class IngestionJob implements Job {
 
     public void setDailyGarchPredictionService(DailyGarchPredictionService dailyGarchPredictionService) {
         this.dailyGarchPredictionService = dailyGarchPredictionService;
+    }
+
+    public void setMarketDepthIngestionService(MarketDepthIngestionService marketDepthIngestionService) {
+        this.marketDepthIngestionService = marketDepthIngestionService;
     }
 
     public void setSignalService(SignalService signalService) {
@@ -217,6 +222,16 @@ public class IngestionJob implements Job {
             }
         } catch (Exception e) {
             log.error("Equity basket live ingestion failed", e);
+        }
+
+        // Market depth capture — one batched call for the whole basket. Purely observational
+        // (see MarketDepthIngestionService); isolated so a market-quote outage never affects
+        // anything else in this job.
+        try {
+            int depthCaptured = marketDepthIngestionService.ingestBasketSnapshot();
+            log.info("Captured {} market depth snapshot(s)", depthCaptured);
+        } catch (Exception e) {
+            log.error("Market depth capture failed", e);
         }
 
         // Evaluates whatever AI predictions (any instrument/horizon) are now knowable — pure

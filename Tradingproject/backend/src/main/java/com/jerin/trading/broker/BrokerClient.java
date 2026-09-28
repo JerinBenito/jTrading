@@ -1,5 +1,6 @@
 package com.jerin.trading.broker;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -46,6 +47,27 @@ public interface BrokerClient {
      * a sector benchmark alongside it. */
     List<KeyRatio> getKeyRatios(String isin);
 
+    /** Live market depth (top-of-book buy/sell levels and aggregate quantities) for up to 500
+     * instrument_keys in a single call. Live-only — the broker has no historical order-book
+     * endpoint, so this can only ever describe "right now", never be backfilled for past dates. */
+    List<MarketQuote> getMarketQuotes(List<String> instrumentKeys);
+
     record KeyRatio(String name, String companyValue, String sectorValue) {
+    }
+
+    /** One instrument's live order-book snapshot. {@code totalBuyQuantity}/{@code totalSellQuantity}
+     * are the broker's own aggregate across all depth levels — imbalance = (buy - sell) / (buy +
+     * sell), the standard order-flow-imbalance definition. Top-of-book price/qty kept separately
+     * since they're the cheapest, most liquid part of the book to act on. */
+    record MarketQuote(
+            String symbol,
+            BigDecimal lastPrice,
+            Long totalBuyQuantity,
+            Long totalSellQuantity,
+            BigDecimal topBidPrice,
+            Long topBidQuantity,
+            BigDecimal topAskPrice,
+            Long topAskQuantity
+    ) {
     }
 }
