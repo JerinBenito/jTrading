@@ -78,6 +78,12 @@ INTRADAY_FEATURES = [
     # Added 2026-09-29: yesterday's version of the same rank - see add_prev_day_volume_rank().
     # Same reasoning: not history-gated, derived from long-history volume data.
     "prevDayVolumeRankPct",
+    # Added 2026-09-29: returnSoFarPct x volumeSoFarRatio - does today's direction-so-far,
+    # combined with how busy today has been so far, predict the REST of today's move? Real and
+    # strong by mid-afternoon (hour 5: Spearman -0.095, t=-14.99, p<0.0001) - same reversal
+    # direction as the daily OBV and 40-day climax-reversal findings: a move up on heavy volume
+    # tends to give some back into the close, not extend further. See intraday_obv_backtest.py.
+    "intradayObv",
 ]
 # The eight inputs that describe the AI's own past errors, nudges and revisions.
 AI_SELF_FEATURES = [
@@ -228,6 +234,8 @@ def train_intraday_model():
     df = pd.DataFrame(rows)
     df = add_basket_volume_rank(df)
     df = add_prev_day_volume_rank(df)
+    df["intradayObv"] = pd.to_numeric(df["returnSoFarPct"], errors="coerce") * \
+        pd.to_numeric(df["volumeSoFarRatio"], errors="coerce")
     # aiPriorDay* (added 2026-09-17) is 100% null for every row before that date - with no
     # non-null value anywhere to infer from, pandas types an all-null column as object, which
     # LightGBM rejects outright (same class of bug already hit and fixed on the multi-day path).
@@ -312,6 +320,9 @@ def run_intraday_predictions(models, symbols, latest_day_end_rank):
         live["basketVolumeRankPct"] = None
         rank = latest_day_end_rank.get(sym)
         live["prevDayVolumeRankPct"] = float(rank) if pd.notna(rank) else None
+        return_so_far = live.get("returnSoFarPct")
+        volume_so_far = live.get("volumeSoFarRatio")
+        live["intradayObv"] = return_so_far * volume_so_far if return_so_far is not None and volume_so_far is not None else None
     ratios = {s: v["volumeSoFarRatio"] for s, v in live_by_symbol.items() if v.get("volumeSoFarRatio") is not None}
     if ratios:
         ranks = pd.Series(ratios).rank(pct=True)
