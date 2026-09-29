@@ -71,6 +71,9 @@ INTRADAY_FEATURES = [
     # Brand new data source as of today - same 30-day history gate as every other young feature,
     # non-negotiable after the memorization bug this session already found once.
     "globalIndiaVixLevel",
+    # Added 2026-09-29: cross-sectional relative-volume rank - see add_basket_volume_rank(). Not
+    # history-gated: derived from volumeSoFarRatio, which already has ~2 years of real data.
+    "basketVolumeRankPct",
 ]
 # The eight inputs that describe the AI's own past errors, nudges and revisions.
 AI_SELF_FEATURES = [
@@ -173,10 +176,22 @@ QUANTILE_LOW_ALPHA = 0.05
 QUANTILE_HIGH_ALPHA = 0.95
 
 
+def add_basket_volume_rank(df):
+    """Cross-sectional rank of volumeSoFarRatio among every basket stock at the SAME hour of
+    the SAME day - not a stock vs its own history (that's volumeSoFarRatio itself), but a stock
+    vs its 49 peers right now. Backtested 2026-09-29: high relative volume at hour 1 predicts a
+    genuinely bigger remaining move that day (Rank IC +0.079, t=+11.35, 495 real days) - real,
+    strong, and derived from volume data that already has ~2 years of history, so unlike VIX
+    this doesn't need a fresh-start history gate."""
+    df["basketVolumeRankPct"] = df.groupby(["tradingDate", "hoursSinceOpen"])["volumeSoFarRatio"].rank(pct=True)
+    return df
+
+
 def train_intraday_model():
     print("Training intraday model on full history...")
     rows = get_json("/api/ml/intraday-features/all")
     df = pd.DataFrame(rows)
+    df = add_basket_volume_rank(df)
     # aiPriorDay* (added 2026-09-17) is 100% null for every row before that date - with no
     # non-null value anywhere to infer from, pandas types an all-null column as object, which
     # LightGBM rejects outright (same class of bug already hit and fixed on the multi-day path).
@@ -238,13 +253,29 @@ def run_intraday_predictions(models, symbols):
     action in it, which is strictly more informative than the earlier call, not a risk of
     clobbering something better."""
     print("\nGenerating live intraday predictions...")
-    submitted, skipped = 0, 0
+
+    # First pass: fetch every symbol's live snapshot before predicting any of them, so
+    # basketVolumeRankPct can be computed cross-sectionally (this stock's volumeSoFarRatio vs
+    # the other 49, right now) - the same real-time comparison the backtest validated, not each
+    # stock's own history in isolation.
+    live_by_symbol = {}
     for sym in symbols:
         live = get_json(f"/api/ml/intraday-features/{urllib.parse.quote(sym)}/live")
-        if live is None:
-            skipped += 1
-            continue
+        if live is not None:
+            live_by_symbol[sym] = live
 
+    # Every symbol needs the key present (even as None) - live_feature_row selects columns by
+    # name, and a missing key (not just a null value) raises a KeyError.
+    for live in live_by_symbol.values():
+        live["basketVolumeRankPct"] = None
+    ratios = {s: v["volumeSoFarRatio"] for s, v in live_by_symbol.items() if v.get("volumeSoFarRatio") is not None}
+    if ratios:
+        ranks = pd.Series(ratios).rank(pct=True)
+        for sym, rank in ranks.items():
+            live_by_symbol[sym]["basketVolumeRankPct"] = float(rank)
+
+    submitted, skipped = 0, len(symbols) - len(live_by_symbol)
+    for sym, live in live_by_symbol.items():
         # All three models were trained on the identical feature set this run, so any one of
         # them shapes the row correctly.
         row = live_feature_row(live, models["median"])
