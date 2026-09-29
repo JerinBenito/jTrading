@@ -27,6 +27,7 @@ import urllib.request
 from datetime import date
 
 import joblib
+import numpy as np
 import pandas as pd
 from lightgbm import LGBMRegressor
 
@@ -131,6 +132,9 @@ SUPPLEMENTARY_FEATURES = [
     # direction: large positive = big up-move on high volume (literature says: expect pullback),
     # large negative = big down-move on high volume (expect bounce).
     "bigMoveVolumeInteraction",
+    # Added 2026-09-29: On-Balance Volume 10-day momentum - see obv_momentum() above for the
+    # real backtest numbers and the honest sign-flip finding.
+    "obvMomentum10d",
 ]
 MULTIDAY_FEATURES = MULTIDAY_REQUIRED_FEATURES + SUPPLEMENTARY_FEATURES
 HORIZONS = [5, 10, 20, 40]
@@ -362,10 +366,25 @@ def train_multiday_models_per_symbol(symbols):
         all_rows.extend(rows)
     df = pd.DataFrame(all_rows)
     df["tradingDate"] = pd.to_datetime(df["tradingDate"])
+    df = df.sort_values(["instrument", "tradingDate"])
     # See MULTIDAY_FEATURES' comment - reused for both training (below) and live prediction
     # (run_multiday_predictions reads the same enriched df), so this only needs computing once.
     df["bigMoveVolumeInteraction"] = pd.to_numeric(df["dailyReturnPct"], errors="coerce") * \
         pd.to_numeric(df["volumeRatio20d"], errors="coerce")
+
+    # On-Balance Volume momentum - backtested 2026-09-29 (obv_backtest.py): real, survives
+    # Bonferroni across 3 horizons, but the SIGN is the opposite of OBV's classical bullish
+    # reading - strong recent OBV momentum (heavy accumulated buying pressure) predicted WORSE
+    # forward returns here (20d: Spearman -0.034, t=-5.05, p<0.0001), not better. A contrarian/
+    # exhaustion signal on this basket, not a continuation one.
+    def obv_momentum(g):
+        vol = pd.to_numeric(g["volume"], errors="coerce")
+        ret = pd.to_numeric(g["dailyReturnPct"], errors="coerce")
+        signed_vol = np.where(ret > 0, vol, np.where(ret < 0, -vol, 0))
+        obv = pd.Series(signed_vol, index=g.index).cumsum()
+        return obv.pct_change(10).replace([np.inf, -np.inf], np.nan)
+
+    df["obvMomentum10d"] = df.groupby("instrument", group_keys=False).apply(obv_momentum)
 
     models = {}
     baselines = {}
