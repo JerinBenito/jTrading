@@ -74,6 +74,9 @@ INTRADAY_FEATURES = [
     # Added 2026-09-29: cross-sectional relative-volume rank - see add_basket_volume_rank(). Not
     # history-gated: derived from volumeSoFarRatio, which already has ~2 years of real data.
     "basketVolumeRankPct",
+    # Added 2026-09-29: yesterday's version of the same rank - see add_prev_day_volume_rank().
+    # Same reasoning: not history-gated, derived from long-history volume data.
+    "prevDayVolumeRankPct",
 ]
 # The eight inputs that describe the AI's own past errors, nudges and revisions.
 AI_SELF_FEATURES = [
@@ -118,6 +121,16 @@ SUPPLEMENTARY_FEATURES = [
     # what FORWARD_5D/FORWARD_10D predict) - not an extrapolation from a different horizon, unlike
     # its inclusion in the intraday model's same-day-close target.
     "globalIndiaVixLevel",
+    # Added 2026-09-29: does a big price move on high volume reverse more than the same move on
+    # low volume? Real, published effect (Lee & Swaminathan 2000) and confirmed on our own data
+    # at the 40-day horizon (high-volume big moves reversed +0.60% on average vs -0.16% for
+    # low-volume big moves, t=+2.49, p=0.013 for the difference) - NOT yet confirmed at 20 days
+    # (see volume_climax_reversal_test.py), so this is really evidenced for FORWARD_40D
+    # specifically, included here for all horizons since the model already trains separately per
+    # horizon and can learn to ignore it where it doesn't help. Signed so the model can read
+    # direction: large positive = big up-move on high volume (literature says: expect pullback),
+    # large negative = big down-move on high volume (expect bounce).
+    "bigMoveVolumeInteraction",
 ]
 MULTIDAY_FEATURES = MULTIDAY_REQUIRED_FEATURES + SUPPLEMENTARY_FEATURES
 HORIZONS = [5, 10, 20, 40]
@@ -187,11 +200,30 @@ def add_basket_volume_rank(df):
     return df
 
 
+def add_prev_day_volume_rank(df):
+    """Yesterday's END-OF-DAY basketVolumeRankPct (this stock's full-day relative volume vs its
+    49 peers, from the last trading day) attached to every row of TODAY - known before today's
+    market even opens, unlike basketVolumeRankPct itself which only builds up through the day.
+    Backtested 2026-09-29 (volume_rank_persistence_test.py): real volume clustering, t=+66 across
+    23,570 real (stock, day) pairs - stocks in the top 20% by relative volume yesterday were in
+    the top 20% again today 40% of the time, vs a 21% unconditional baseline. tradingDate is an
+    ISO string (YYYY-MM-DD), which sorts chronologically the same as lexicographically, so no
+    datetime conversion is needed here."""
+    day_end = (df.sort_values(["instrument", "tradingDate", "hoursSinceOpen"])
+                 .groupby(["instrument", "tradingDate"])["basketVolumeRankPct"].last()
+                 .reset_index().rename(columns={"basketVolumeRankPct": "dayEndVolumeRankPct"}))
+    day_end = day_end.sort_values(["instrument", "tradingDate"])
+    day_end["prevDayVolumeRankPct"] = day_end.groupby("instrument")["dayEndVolumeRankPct"].shift(1)
+    return df.merge(day_end[["instrument", "tradingDate", "prevDayVolumeRankPct"]],
+                     on=["instrument", "tradingDate"], how="left")
+
+
 def train_intraday_model():
     print("Training intraday model on full history...")
     rows = get_json("/api/ml/intraday-features/all")
     df = pd.DataFrame(rows)
     df = add_basket_volume_rank(df)
+    df = add_prev_day_volume_rank(df)
     # aiPriorDay* (added 2026-09-17) is 100% null for every row before that date - with no
     # non-null value anywhere to infer from, pandas types an all-null column as object, which
     # LightGBM rejects outright (same class of bug already hit and fixed on the multi-day path).
@@ -219,7 +251,13 @@ def train_intraday_model():
         save_model(m, f"intraday_{name}")
         models[name] = m
     print(f"  trained on {len(df)} rows")
-    return models
+
+    # Each instrument's most recent recorded end-of-day basketVolumeRankPct (the last hour of
+    # the last day already in history) - exactly what "yesterday" means for a live prediction
+    # made today, since today itself isn't in this historical set yet.
+    latest_day_end_rank = (df.sort_values(["instrument", "tradingDate", "hoursSinceOpen"])
+                              .groupby("instrument")["basketVolumeRankPct"].last())
+    return models, latest_day_end_rank
 
 
 def select_intraday_features(df):
@@ -246,7 +284,7 @@ def live_feature_row(live, model):
     return pd.DataFrame([live])[names].apply(pd.to_numeric, errors="coerce")
 
 
-def run_intraday_predictions(models, symbols):
+def run_intraday_predictions(models, symbols, latest_day_end_rank):
     """Deliberately overwrites today's existing INTRADAY prediction every time this runs (the
     backend upserts by instrument+horizon+day) rather than skipping if one already exists - a
     later call in the same day means a fresher live snapshot with more of today's actual price
@@ -266,8 +304,10 @@ def run_intraday_predictions(models, symbols):
 
     # Every symbol needs the key present (even as None) - live_feature_row selects columns by
     # name, and a missing key (not just a null value) raises a KeyError.
-    for live in live_by_symbol.values():
+    for sym, live in live_by_symbol.items():
         live["basketVolumeRankPct"] = None
+        rank = latest_day_end_rank.get(sym)
+        live["prevDayVolumeRankPct"] = float(rank) if pd.notna(rank) else None
     ratios = {s: v["volumeSoFarRatio"] for s, v in live_by_symbol.items() if v.get("volumeSoFarRatio") is not None}
     if ratios:
         ranks = pd.Series(ratios).rank(pct=True)
@@ -322,6 +362,10 @@ def train_multiday_models_per_symbol(symbols):
         all_rows.extend(rows)
     df = pd.DataFrame(all_rows)
     df["tradingDate"] = pd.to_datetime(df["tradingDate"])
+    # See MULTIDAY_FEATURES' comment - reused for both training (below) and live prediction
+    # (run_multiday_predictions reads the same enriched df), so this only needs computing once.
+    df["bigMoveVolumeInteraction"] = pd.to_numeric(df["dailyReturnPct"], errors="coerce") * \
+        pd.to_numeric(df["volumeRatio20d"], errors="coerce")
 
     models = {}
     baselines = {}
@@ -393,8 +437,8 @@ if __name__ == "__main__":
     # snapshot that includes more of today's actual price action than the last run had -
     # genuinely re-predicting from newer information, not just re-anchoring the point estimate
     # to the current price the way the deterministic model does.
-    intraday_models = train_intraday_model()
-    run_intraday_predictions(intraday_models, symbols)
+    intraday_models, latest_day_end_rank = train_intraday_model()
+    run_intraday_predictions(intraday_models, symbols, latest_day_end_rank)
 
     # Multi-day: only needs one real run per day - its features/target don't change intraday.
     if already_ran_multiday_today():
