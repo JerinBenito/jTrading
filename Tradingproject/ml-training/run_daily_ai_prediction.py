@@ -22,6 +22,8 @@ predicted X" print statement here as any kind of signal to act on.
 """
 import json
 import os
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import date
@@ -146,9 +148,28 @@ MULTIDAY_FEATURES = MULTIDAY_REQUIRED_FEATURES + SUPPLEMENTARY_FEATURES
 HORIZONS = [5, 10, 20, 40]
 
 
-def get_json(path):
-    with urllib.request.urlopen(f"{API_BASE}{path}", timeout=60) as resp:
-        return json.loads(resp.read())
+def get_json(path, timeout=60, attempts=3):
+    """Retries on timeouts/connection errors/5xx. Found 2026-10-05: /api/ml/intraday-features/all
+    is ~181 MB and takes ~84 s end to end, against the old fixed 60 s timeout - it only passed by
+    a thin margin, and when the 1 GB backend VM stalled for 47 s (thread starvation, swapping)
+    the first run of the day timed out and crashed, losing every stock's 10:10 call. The caller
+    passes a much longer timeout for that one big download; everything else keeps 60 s."""
+    last_error = None
+    for attempt in range(1, attempts + 1):
+        try:
+            with urllib.request.urlopen(f"{API_BASE}{path}", timeout=timeout) as resp:
+                return json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            if e.code < 500:
+                raise
+            last_error = e
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+            last_error = e
+        if attempt < attempts:
+            wait = 5 * attempt
+            print(f"  GET {path} failed ({last_error!r}), retry {attempt}/{attempts - 1} in {wait}s")
+            time.sleep(wait)
+    raise last_error
 
 
 def post_json(path, payload):
@@ -230,7 +251,7 @@ def add_prev_day_volume_rank(df):
 
 def train_intraday_model():
     print("Training intraday model on full history...")
-    rows = get_json("/api/ml/intraday-features/all")
+    rows = get_json("/api/ml/intraday-features/all", timeout=420)
     df = pd.DataFrame(rows)
     df = add_basket_volume_rank(df)
     df = add_prev_day_volume_rank(df)
