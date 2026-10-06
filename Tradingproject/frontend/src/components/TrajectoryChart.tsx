@@ -39,6 +39,7 @@ function formatHour(iso: string) {
   return new Date(iso).toLocaleString('en-IN', {
     timeZone: 'Asia/Kolkata',
     hour: 'numeric',
+    minute: '2-digit',
     hour12: true,
   });
 }
@@ -277,12 +278,17 @@ export function TrajectoryChart({
                   x2={x}
                   y2={yFor(snap.predictedRangeHigh!)}
                   stroke={colors.ai}
-                  strokeOpacity={0.5}
-                  strokeWidth={3}
+                  strokeOpacity={0.65}
+                  strokeWidth={4}
                   strokeLinecap="round"
                 />
               )}
-              <Path d={diamondPathD(x, yFor(snap.predictedValue), 3.5)} fill={colors.ai} />
+              <Path
+                d={diamondPathD(x, yFor(snap.predictedValue), 5)}
+                fill={colors.ai}
+                stroke={colors.surface}
+                strokeWidth={1.5}
+              />
             </G>
           );
         })}
@@ -312,6 +318,9 @@ export function TrajectoryChart({
         <SvgText x={xFor(0)} y={CHART_HEIGHT - 8} fill={colors.textMuted} fontSize={10} textAnchor="start">
           {formatHour(points[0].ts)}
         </SvgText>
+        {/* Only draw the end label once there's a second point to separate it from the start
+         * label — with just one candle so far today they'd sit on the same x and overlap. */}
+        {points.length > 1 && (
         <SvgText
           x={xFor(points.length - 1)}
           y={CHART_HEIGHT - 8}
@@ -321,6 +330,7 @@ export function TrajectoryChart({
         >
           {formatHour(lastPoint.ts)}
         </SvgText>
+        )}
       </Svg>
 
       <View style={styles.legendRow}>

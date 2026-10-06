@@ -87,10 +87,11 @@ export default function StockDetailScreen() {
 
       {data && (
         <>
+          <Text style={styles.summaryEyebrow}>Predicted</Text>
           <View style={styles.summaryRow}>
-            <SummaryStat styles={styles} colors={colors} label="Predicted close" value={formatPrice(data.predictedClose)} accent />
-            <SummaryStat styles={styles} colors={colors} label="Predicted low" value={formatPrice(data.rangeLow)} />
-            <SummaryStat styles={styles} colors={colors} label="Predicted high" value={formatPrice(data.rangeHigh)} />
+            <SummaryStat styles={styles} colors={colors} label="Close" value={formatPrice(data.predictedClose)} accent />
+            <SummaryStat styles={styles} colors={colors} label="Low" value={formatPrice(data.rangeLow)} />
+            <SummaryStat styles={styles} colors={colors} label="High" value={formatPrice(data.rangeHigh)} />
           </View>
 
           {data.actualClose !== null && (
@@ -220,6 +221,14 @@ function createStyles(colors: Theme) {
       fontSize: 24,
       fontWeight: '800',
       letterSpacing: -0.5,
+    },
+    summaryEyebrow: {
+      color: colors.textMuted,
+      fontSize: 10,
+      fontWeight: '700',
+      textTransform: 'uppercase',
+      letterSpacing: 0.6,
+      marginBottom: -4,
     },
     summaryRow: {
       flexDirection: 'row',
