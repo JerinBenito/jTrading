@@ -8,6 +8,7 @@ import type { Theme } from '../../src/theme/tokens';
 import { useApiData } from '../../src/hooks/useApiData';
 import { useLiveFeed } from '../../src/hooks/useLiveFeed';
 import { api } from '../../src/api/client';
+import { resultsExplanation } from '../../src/utils/results';
 import { TrajectoryChart } from '../../src/components/TrajectoryChart';
 import { BacktestResultTable } from '../../src/components/BacktestResultTable';
 import { IntradayReanchorTable } from '../../src/components/IntradayReanchorTable';
@@ -35,6 +36,8 @@ export default function StockDetailScreen() {
   const fundamentals = useApiData(() => api.getFundamentals(symbol), [symbol]);
   const signals = useApiData(() => api.getSignalHistory(symbol), [symbol]);
   const aiSnapshots = useApiData(() => api.getAiPredictionSnapshots(symbol), [symbol]);
+  const upcomingResults = useApiData(() => api.getResultsUpcoming(7), []);
+  const results = (upcomingResults.data ?? []).find((e) => e.instrument === symbol);
   const live = useLiveFeed(symbol);
 
   const [manualRefreshing, setManualRefreshing] = useState(false);
@@ -50,6 +53,7 @@ export default function StockDetailScreen() {
     fundamentals.refresh();
     signals.refresh();
     aiSnapshots.refresh();
+    upcomingResults.refresh();
     setTimeout(() => setManualRefreshing(false), 600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -75,6 +79,13 @@ export default function StockDetailScreen() {
           </Text>
         </View>
       </View>
+
+      {results && (
+        <View style={styles.resultsBanner}>
+          <Ionicons name="calendar" size={16} color={colors.neutral} />
+          <Text style={styles.resultsText}>{resultsExplanation(results)}</Text>
+        </View>
+      )}
 
       {trajectory.loading && <LoadingState />}
       {!trajectory.loading && trajectory.error && (
@@ -254,6 +265,22 @@ function createStyles(colors: Theme) {
       color: colors.textPrimary,
       fontSize: 16,
       fontWeight: '800',
+    },
+    resultsBanner: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
+      backgroundColor: `${colors.neutral}1F`,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: `${colors.neutral}55`,
+      padding: 12,
+    },
+    resultsText: {
+      flex: 1,
+      color: colors.textSecondary,
+      fontSize: 12,
+      lineHeight: 17,
     },
     closedBanner: {
       flexDirection: 'row',

@@ -9,7 +9,7 @@ import { api } from '../../src/api/client';
 import { ScreenHeader } from '../../src/components/ScreenHeader';
 import { BasketSnapshotRow } from '../../src/components/BasketSnapshotRow';
 import { EmptyState, ErrorState, LoadingState } from '../../src/components/ScreenState';
-import type { BasketSnapshot } from '../../src/api/types';
+import type { BasketSnapshot, ResultsCalendarEntry } from '../../src/api/types';
 
 type SortMode = 'symbol' | 'gainers' | 'losers' | 'vsCall';
 
@@ -47,12 +47,23 @@ export default function MonitorScreen() {
   const { theme: colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const basket = useApiData(() => api.getBasketSnapshot(), []);
+  const upcomingResults = useApiData(() => api.getResultsUpcoming(7), []);
+  // Nearest results date per symbol (the list arrives sorted by date). A flag is a nice-to-have: if the
+  // calendar request fails the rows simply render without it.
+  const resultsBySymbol = useMemo(() => {
+    const map = new Map<string, ResultsCalendarEntry>();
+    for (const entry of upcomingResults.data ?? []) {
+      if (!map.has(entry.instrument)) map.set(entry.instrument, entry);
+    }
+    return map;
+  }, [upcomingResults.data]);
   const [sortMode, setSortMode] = useState<SortMode>('vsCall');
 
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const onRefresh = useCallback(() => {
     setManualRefreshing(true);
     basket.refresh();
+    upcomingResults.refresh();
     setTimeout(() => setManualRefreshing(false), 600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -66,7 +77,11 @@ export default function MonitorScreen() {
       data={sorted}
       keyExtractor={(item) => item.symbol}
       renderItem={({ item }) => (
-        <BasketSnapshotRow snapshot={item} onPress={() => router.push(`/stock/${item.symbol}`)} />
+        <BasketSnapshotRow
+          snapshot={item}
+          results={resultsBySymbol.get(item.symbol)}
+          onPress={() => router.push(`/stock/${item.symbol}`)}
+        />
       )}
       ItemSeparatorComponent={() => <View style={styles.separator} />}
       refreshControl={

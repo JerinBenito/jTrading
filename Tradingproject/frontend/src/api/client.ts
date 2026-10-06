@@ -13,6 +13,7 @@ import type {
   PredictionComparisonResponse,
   RangeCalibrationBacktestResult,
   RangeCalibrationStatus,
+  ResultsCalendarEntry,
   SignalHistoryEntry,
 } from './types';
 
@@ -103,4 +104,8 @@ export const api = {
    * "latest call" the comparison table shows). */
   getAiPredictionSnapshots: (instrument: string, horizon: string = 'INTRADAY') =>
     getJson<AiPredictionSnapshot[]>(`/api/ai-predictions/${instrument}/snapshots?horizon=${horizon}`),
+
+  /** Quarterly results from yesterday through `days` ahead, whole basket — drives the "results today/soon" flag. */
+  getResultsUpcoming: (days: number = 7) =>
+    getJson<ResultsCalendarEntry[]>(`/api/results-calendar/upcoming?days=${days}`),
 };

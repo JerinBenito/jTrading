@@ -193,3 +193,11 @@ export interface GlobalMarketSnapshot {
   changePct: number | null;
   previousClose: number | null;
 }
+
+/** One quarterly-results date for a basket stock. daysUntil is relative to today (IST): 0 = today, -1 = yesterday. */
+export interface ResultsCalendarEntry {
+  instrument: string;
+  resultsDate: string;
+  epsEstimate: number | null;
+  daysUntil: number;
+}

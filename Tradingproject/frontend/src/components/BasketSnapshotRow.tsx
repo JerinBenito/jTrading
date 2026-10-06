@@ -2,7 +2,9 @@ import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
 import type { Theme } from '../theme/tokens';
-import type { BasketSnapshot } from '../api/types';
+import type { BasketSnapshot, ResultsCalendarEntry } from '../api/types';
+import { Badge } from './ui/Badge';
+import { resultsChipLabel } from '../utils/results';
 
 function trendColor(colors: Theme, trend: BasketSnapshot['trend']) {
   if (trend === 'BULLISH') return colors.up;
@@ -16,7 +18,15 @@ function rsiZoneColor(colors: Theme, zone: BasketSnapshot['rsiZone']) {
   return colors.textMuted;
 }
 
-export function BasketSnapshotRow({ snapshot, onPress }: { snapshot: BasketSnapshot; onPress?: () => void }) {
+export function BasketSnapshotRow({
+  snapshot,
+  onPress,
+  results,
+}: {
+  snapshot: BasketSnapshot;
+  onPress?: () => void;
+  results?: ResultsCalendarEntry;
+}) {
   const { theme: colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const changeColor = snapshot.changePct >= 0 ? colors.up : colors.down;
@@ -34,6 +44,7 @@ export function BasketSnapshotRow({ snapshot, onPress }: { snapshot: BasketSnaps
           {snapshot.symbol}
         </Text>
         <Text style={styles.close}>{snapshot.lastClose.toFixed(2)}</Text>
+        {results && <Badge label={resultsChipLabel(results)} color={colors.neutral} />}
       </View>
       <View style={styles.mid}>
         <Text style={[styles.trendBadge, { color: trendColor(colors, snapshot.trend) }]} numberOfLines={1}>
