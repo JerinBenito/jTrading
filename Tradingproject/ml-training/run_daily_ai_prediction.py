@@ -86,6 +86,11 @@ INTRADAY_FEATURES = [
     # direction as the daily OBV and 40-day climax-reversal findings: a move up on heavy volume
     # tends to give some back into the close, not extend further. See intraday_obv_backtest.py.
     "intradayObv",
+    # Added 2026-10-06: trading days from the stock's quarterly results date (-3..+3, NaN otherwise) -
+    # see add_results_offset(). A calibration fix, not a direction signal: on results day the model's
+    # 90% range covered only 76% of outcomes without it, 85.5% with it (results_window_ablation.py;
+    # pinball +5.5% on those rows, ~0 elsewhere). Not history-gated - the dates span the full history.
+    "resultsDayOffset",
 ]
 # The eight inputs that describe the AI's own past errors, nudges and revisions.
 AI_SELF_FEATURES = [
@@ -249,12 +254,91 @@ def add_prev_day_volume_rank(df):
                      on=["instrument", "tradingDate"], how="left")
 
 
-def train_intraday_model():
+RESULTS_WINDOW_DAYS = 3
+
+
+def fetch_results_dates(symbols):
+    """{symbol: [(date, eps_estimate_or_None), ...]} of quarterly results dates (past and announced/
+    expected future) from Yahoo via yfinance. Best-effort by design: any failure returns what was
+    gathered so far (possibly {}), and the model simply trains and predicts without the feature - a
+    missing calendar must never cost a day's predictions."""
+    try:
+        import yfinance as yf
+    except ImportError:
+        print("  yfinance not installed - running without the results calendar")
+        return {}
+    out = {}
+    for sym in symbols:
+        if sym in ("NIFTY", "BANKNIFTY"):
+            continue
+        for attempt in range(2):
+            try:
+                ed = yf.Ticker(f"{sym}.NS").get_earnings_dates(limit=25)
+                if ed is not None and len(ed):
+                    ed = ed.reset_index()
+                    dates = pd.to_datetime(ed["Earnings Date"].astype(str).str[:10])
+                    est = pd.to_numeric(ed["EPS Estimate"], errors="coerce")
+                    out[sym] = sorted({(d.date(), None if pd.isna(e) else float(e)) for d, e in zip(dates, est)})
+                break
+            except Exception as e:  # noqa: BLE001 - vendor errors are many and all non-fatal here
+                if attempt == 1:
+                    print(f"  results dates for {sym} unavailable ({type(e).__name__})")
+                else:
+                    time.sleep(2)
+        time.sleep(0.3)
+    print(f"  results calendar: {len(out)} of {len(symbols)} symbols")
+    return out
+
+
+def results_day_offset(day, event_dates):
+    """Business-day offset of `day` from the nearest results date within +-RESULTS_WINDOW_DAYS, else NaN.
+    Business days (weekends only, holidays ignored) so training rows and a live row - whose future
+    trading calendar is unknown - are computed identically. Offset 0 = the results date itself,
+    +1 = the next session (where after-close announcements, ~2/3 of them, actually land)."""
+    d = np.datetime64(str(day)[:10], "D")
+    best = None
+    for e in event_dates:
+        e64 = np.datetime64(e, "D")
+        k = int(np.busday_count(e64, d)) if d >= e64 else -int(np.busday_count(d, e64))
+        if abs(k) <= RESULTS_WINDOW_DAYS and (best is None or abs(k) < abs(best)):
+            best = k
+    return float(best) if best is not None else np.nan
+
+
+def add_results_offset(df, results):
+    """resultsDayOffset for every training row (NaN for stocks with no calendar)."""
+    offsets = {}
+    for sym, items in results.items():
+        events = [d for d, _ in items]
+        for day in df.loc[df["instrument"] == sym, "tradingDate"].unique():
+            offsets[(sym, day)] = results_day_offset(day, events)
+    df["resultsDayOffset"] = [offsets.get((s, d), np.nan) for s, d in zip(df["instrument"], df["tradingDate"])]
+    return df
+
+
+def push_results_calendar(results):
+    """Hands the calendar to the backend for the app's 'results today / soon' flag (best-effort).
+    Only the last ~120 days onwards - older dates are history the app does not show."""
+    cutoff = date.today().toordinal() - 120
+    payload = [{"instrument": sym,
+                "dates": [{"resultsDate": d.isoformat(), "epsEstimate": e} for d, e in items if d.toordinal() >= cutoff]}
+               for sym, items in results.items()]
+    if not payload:
+        return
+    try:
+        res = post_json("/api/results-calendar", payload)
+        print(f"  pushed results calendar to the backend: {res}")
+    except Exception as e:  # noqa: BLE001
+        print(f"  could not push results calendar ({e!r}) - app flag may be stale, predictions unaffected")
+
+
+def train_intraday_model(results=None):
     print("Training intraday model on full history...")
     rows = get_json("/api/ml/intraday-features/all", timeout=420)
     df = pd.DataFrame(rows)
     df = add_basket_volume_rank(df)
     df = add_prev_day_volume_rank(df)
+    df = add_results_offset(df, results or {})
     df["intradayObv"] = pd.to_numeric(df["returnSoFarPct"], errors="coerce") * \
         pd.to_numeric(df["volumeSoFarRatio"], errors="coerce")
     # aiPriorDay* (added 2026-09-17) is 100% null for every row before that date - with no
@@ -300,6 +384,8 @@ def select_intraday_features(df):
     with no further change needed."""
     kept, gated = [], {}
     for f in INTRADAY_FEATURES:
+        if f == "resultsDayOffset" and (f not in df.columns or df[f].notna().sum() == 0):
+            continue  # no results calendar this run (vendor down / yfinance missing): fit without it
         if f in HISTORY_GATED_FEATURES:
             days = int(df.loc[df[f].notna(), "tradingDate"].nunique())
             if days < MIN_HISTORY_DAYS:
@@ -317,7 +403,7 @@ def live_feature_row(live, model):
     return pd.DataFrame([live])[names].apply(pd.to_numeric, errors="coerce")
 
 
-def run_intraday_predictions(models, symbols, latest_day_end_rank):
+def run_intraday_predictions(models, symbols, latest_day_end_rank, results=None):
     """Deliberately overwrites today's existing INTRADAY prediction every time this runs (the
     backend upserts by instrument+horizon+day) rather than skipping if one already exists - a
     later call in the same day means a fresher live snapshot with more of today's actual price
@@ -344,6 +430,8 @@ def run_intraday_predictions(models, symbols, latest_day_end_rank):
         return_so_far = live.get("returnSoFarPct")
         volume_so_far = live.get("volumeSoFarRatio")
         live["intradayObv"] = return_so_far * volume_so_far if return_so_far is not None and volume_so_far is not None else None
+        offset = results_day_offset(live["tradingDate"], [d for d, _ in (results or {}).get(sym, [])])
+        live["resultsDayOffset"] = None if np.isnan(offset) else offset
     ratios = {s: v["volumeSoFarRatio"] for s, v in live_by_symbol.items() if v.get("volumeSoFarRatio") is not None}
     if ratios:
         ranks = pd.Series(ratios).rank(pct=True)
@@ -488,8 +576,11 @@ if __name__ == "__main__":
     # snapshot that includes more of today's actual price action than the last run had -
     # genuinely re-predicting from newer information, not just re-anchoring the point estimate
     # to the current price the way the deterministic model does.
-    intraday_models, latest_day_end_rank = train_intraday_model()
-    run_intraday_predictions(intraday_models, symbols, latest_day_end_rank)
+    print("Fetching the quarterly-results calendar...")
+    results_calendar = fetch_results_dates(symbols)
+    push_results_calendar(results_calendar)
+    intraday_models, latest_day_end_rank = train_intraday_model(results_calendar)
+    run_intraday_predictions(intraday_models, symbols, latest_day_end_rank, results_calendar)
 
     # Multi-day: only needs one real run per day - its features/target don't change intraday.
     if already_ran_multiday_today():

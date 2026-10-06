@@ -64,6 +64,8 @@ def build_frame():
     df = m.add_prev_day_volume_rank(df)
     df["intradayObv"] = pd.to_numeric(df["returnSoFarPct"], errors="coerce") * \
         pd.to_numeric(df["volumeSoFarRatio"], errors="coerce")
+    if "resultsDayOffset" not in df.columns:   # added to production 2026-10-06; this ablation predates it
+        df["resultsDayOffset"] = np.nan
     df[m.INTRADAY_FEATURES] = df[m.INTRADAY_FEATURES].apply(pd.to_numeric, errors="coerce")
     df = df.dropna(subset=["remainingDriftPct"]).reset_index(drop=True)
     return df
