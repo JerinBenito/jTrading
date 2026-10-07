@@ -20,6 +20,7 @@ over baseline for any of this. Running this daily does not change that - it star
 honest track record the model will be judged on, exactly as agreed. Do not read a "the model
 predicted X" print statement here as any kind of signal to act on.
 """
+import gzip
 import json
 import os
 import time
@@ -162,8 +163,12 @@ def get_json(path, timeout=60, attempts=3):
     last_error = None
     for attempt in range(1, attempts + 1):
         try:
-            with urllib.request.urlopen(f"{API_BASE}{path}", timeout=timeout) as resp:
-                return json.loads(resp.read())
+            req = urllib.request.Request(f"{API_BASE}{path}", headers={"Accept-Encoding": "gzip"})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                body = resp.read()
+                if resp.headers.get("Content-Encoding") == "gzip":
+                    body = gzip.decompress(body)
+                return json.loads(body)
         except urllib.error.HTTPError as e:
             if e.code < 500:
                 raise

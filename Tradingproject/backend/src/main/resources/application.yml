@@ -35,6 +35,12 @@ github-dispatch:
 
 server:
   port: ${SERVER_PORT:8080}
+  # The daily AI run downloads /api/ml/intraday-features/all (~181 MB of JSON, growing daily); JSON
+  # compresses ~10x, which cuts that download from ~85 s to a few seconds. Clients opt in with Accept-Encoding.
+  compression:
+    enabled: true
+    mime-types: application/json
+    min-response-size: 4096
 
 management:
   endpoints:
