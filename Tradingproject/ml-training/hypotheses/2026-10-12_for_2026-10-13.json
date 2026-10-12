@@ -1,0 +1,76 @@
+{
+ "registered_at": "12-10-2026 20:28 IST",
+ "about_session": "2026-10-13 (Tue)",
+ "data_as_of": "2026-10-12 final hourly candle (15:30 IST close) + completed daily bars",
+ "status": "PRE-REGISTERED hypotheses, not trade instructions. No entry, stop, target or position size is implied. Scored against actual prices after the 13 Oct close.",
+ "hypotheses": [
+  {
+   "id": "H1",
+   "claim": "HCLTECH, if it announced results on 12 Oct (vendor date), has an unusually large close-to-close move on 13 Oct. Direction NOT claimed.",
+   "evidence": "342 past results events on this basket: reaction-day average |move| 2.38% vs 1.15% normal (2.07x); 66% of companies react the next session (after-close announcements).",
+   "pass_if": "|close-to-close move| on 13 Oct >= 2.0%",
+   "fail_if": "|move| < 1.2% (a normal day)",
+   "base_rate_if_no_effect": "about 20%"
+  },
+  {
+   "id": "H2",
+   "claim": "Yesterday's 5 relative winners underperform yesterday's 5 relative losers on 13 Oct (market-adjusted close-to-close, equal weight).",
+   "winners": [
+    "DRREDDY",
+    "BAJAJ-AUTO",
+    "TMPV",
+    "BEL",
+    "EICHERMOT"
+   ],
+   "losers": [
+    "APOLLOHOSP",
+    "ITC",
+    "TECHM",
+    "LT",
+    "MAXHEALTH"
+   ],
+   "evidence": "Next-day rank IC of the day's return = -0.038 (t=-3.8, 512 days): a real but tiny short-term reversal. Gross decile spread about 0.02%/day, far below trading costs.",
+   "pass_if": "winners' mean market-adjusted return < losers' mean",
+   "fail_if": "winners' mean >= losers' mean",
+   "base_rate_if_no_effect": "50%",
+   "honest_note": "one day, 10 stocks: noise dominates, expected hit rate only ~55%"
+  },
+  {
+   "id": "H3",
+   "claim": "The 5 stocks with RSI<30 (oversold) outperform the basket on average over the next 3 sessions (13-15 Oct close).",
+   "names": [
+    "MAXHEALTH",
+    "GRASIM",
+    "HINDALCO",
+    "M&M",
+    "TITAN"
+   ],
+   "evidence": "Live RSI-oversold reversal signals right 54% (n=816) but during a falling market; offline backtests of RSI found no usable edge. Treat as ~coin flip with slight lean.",
+   "pass_if": "mean market-adjusted return, 12 Oct close -> 15 Oct close, > 0",
+   "fail_if": "<= 0",
+   "base_rate_if_no_effect": "50%"
+  },
+  {
+   "id": "H4",
+   "claim": "Relative-volume clustering persists: of today's 10 highest relative-volume stocks, at least 4 are again in the top 10 on 13 Oct.",
+   "names": [
+    "TECHM",
+    "COALINDIA",
+    "NTPC",
+    "APOLLOHOSP",
+    "TATASTEEL",
+    "BAJAJ-AUTO",
+    "HINDUNILVR",
+    "SBIN",
+    "EICHERMOT",
+    "INDIGO"
+   ],
+   "measure": "basketVolumeRankPct at the final hourly candle (/api/ml/intraday-features/{sym}/live volumeSoFarRatio rank)",
+   "evidence": "Backtest, 23,570 stock-days: stocks in the top 20% by relative volume yesterday were in the top 20% again 40% of the time vs a 21% baseline (t=+66).",
+   "pass_if": ">= 4 of the 10 repeat in the top 10",
+   "fail_if": "<= 2",
+   "base_rate_if_no_effect": "expected 2 of 10 by chance; the effect predicts about 4"
+  }
+ ],
+ "market_context_not_a_hypothesis": "Basket -0.51%, 12 advancers/38 decliners, 4/50 above EMA200, India VIX 14.38. No tested signal supports a directional call on the index."
+}
