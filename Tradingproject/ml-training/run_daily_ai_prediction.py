@@ -364,12 +364,22 @@ def train_intraday_model(results=None):
     # its range can never disagree - both come from the same model family instead of two
     # unrelated fits). The low/high models give a genuinely LEARNED range around it - narrower or
     # wider depending on what the model has seen for similar situations, not a fixed formula.
+    # Added 2026-10-12: fit on the remaining drift MINUS each hour's median drift, and do not add it back.
+    # The basket drifted slightly down over the training window (median remaining drift about -0.02 to
+    # -0.04% mid-session), which parked the median model below zero for almost every stock - from 1 Oct
+    # 86-98% of first calls said "down", uncorrelated with the day's real move (-0.08). Centring the
+    # target removes that baked-in lean at no measured accuracy cost (lean_ablation.py: 240 test days,
+    # pinball p=0.83, MAE p=0.76, share of down calls 80% -> 60%). A sample's average drift is not a forecast.
+    hour_median = df.groupby("hoursSinceOpen")["remainingDriftPct"].median()
+    target = df["remainingDriftPct"] - df["hoursSinceOpen"].map(hour_median)
+    print("  centring target by hour (train-set median remaining drift %): "
+          + ", ".join(f"h{int(h)} {v:+.3f}" for h, v in hour_median.items()))
     models = {}
     for name, alpha in (("low", QUANTILE_LOW_ALPHA), ("median", 0.5), ("high", QUANTILE_HIGH_ALPHA)):
         m = LGBMRegressor(n_estimators=300, max_depth=5, learning_rate=0.03,
                            subsample=0.8, colsample_bytree=0.8, random_state=42, verbosity=-1,
                            objective="quantile", alpha=alpha)
-        m.fit(df[features], df["remainingDriftPct"])
+        m.fit(df[features], target)
         save_model(m, f"intraday_{name}")
         models[name] = m
     print(f"  trained on {len(df)} rows")
