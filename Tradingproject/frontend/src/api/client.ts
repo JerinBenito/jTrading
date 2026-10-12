@@ -1,6 +1,7 @@
 import { API_BASE_URL, Instrument } from '../constants/config';
 import type {
   AiPredictionSnapshot,
+  DailyScreen,
   BacktestResult,
   BasketSnapshot,
   CompanyFundamental,
@@ -19,6 +20,16 @@ import type {
 
 async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`);
+  if (!response.ok) {
+    throw new Error(`Request failed (${response.status}): ${path}`);
+  }
+  return response.json() as Promise<T>;
+}
+
+/** 204 (no screen built yet) is a normal state, not an error. */
+async function getJsonOrNull<T>(path: string): Promise<T | null> {
+  const response = await fetch(`${API_BASE_URL}${path}`);
+  if (response.status === 204) return null;
   if (!response.ok) {
     throw new Error(`Request failed (${response.status}): ${path}`);
   }
@@ -108,4 +119,7 @@ export const api = {
   /** Quarterly results from yesterday through `days` ahead, whole basket — drives the "results today/soon" flag. */
   getResultsUpcoming: (days: number = 7) =>
     getJson<ResultsCalendarEntry[]>(`/api/results-calendar/upcoming?days=${days}`),
+
+  /** Latest end-of-day screen (market context, per-stock evidence, next-session hypotheses); null before the first one is built. */
+  getDailyScreen: () => getJsonOrNull<DailyScreen>('/api/daily-screen/latest'),
 };

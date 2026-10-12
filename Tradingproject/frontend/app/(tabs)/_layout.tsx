@@ -11,6 +11,7 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.textMuted,
+        tabBarLabelStyle: { fontSize: 10 },
         tabBarStyle: {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
@@ -48,6 +49,15 @@ export default function TabsLayout() {
           title: 'Monitor',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="stats-chart-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="screen"
+        options={{
+          title: 'Screen',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="reader-outline" size={size} color={color} />
           ),
         }}
       />

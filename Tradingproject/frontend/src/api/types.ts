@@ -201,3 +201,102 @@ export interface ResultsCalendarEntry {
   epsEstimate: number | null;
   daysUntil: number;
 }
+
+/** End-of-day market screen built by ml-training/daily_screen.py - descriptive statistics, not recommendations. */
+export interface ScreenLevel {
+  price: number | null;
+  distPct: number | null;
+}
+
+export interface ScreenStock {
+  symbol: string;
+  close: number;
+  prevClose: number;
+  chg: number;
+  gap: number | null;
+  openToClose: number | null;
+  rsNifty: number;
+  volRatio: number | null;
+  rsi: number | null;
+  atrPct: number | null;
+  r5: number | null;
+  r20: number | null;
+  trend: 'up' | 'down' | 'mixed';
+  resultsDate: string | null;
+  levels: Record<string, ScreenLevel>;
+  band: {
+    p5Pct: number | null;
+    p50Pct: number | null;
+    p95Pct: number | null;
+    low: number | null;
+    high: number | null;
+    medianAbsMovePct: number | null;
+    p90AbsMovePct: number | null;
+    medianRangePct: number | null;
+    upDaysPct: number | null;
+    days: number;
+  };
+  history: {
+    similarDays: { n: number; nextDayMeanPct: number | null; nextDayUpPct: number | null; next5dMeanPct: number | null };
+    oversold: { n: number; next5dMeanPct: number | null; next5dUpPct: number | null } | null;
+  };
+}
+
+export interface ScreenIndex {
+  close: number;
+  chg: number;
+  rsi: number | null;
+  r5: number | null;
+  r20: number | null;
+  vsEma21Pct: number | null;
+  vsEma200Pct: number | null;
+}
+
+export interface ScreenHypothesis {
+  id: string;
+  title: string;
+  claim: string;
+  evidence: string;
+  passIf: string;
+  baseRate: string;
+  names?: string[];
+  winners?: string[];
+  losers?: string[];
+  scoreAfterSessions: number;
+}
+
+export interface ScreenScoredResult {
+  id: string;
+  title: string;
+  claim: string;
+  outcome: 'PASS' | 'FAIL' | 'INCONCLUSIVE' | 'PENDING' | 'N/A';
+  detail: string;
+}
+
+export interface DailyScreen {
+  sessionDate: string;
+  nextSession: string;
+  asOf: string;
+  dataNote: string;
+  notAvailable: string[];
+  disclaimer: string;
+  market: {
+    nifty: ScreenIndex;
+    banknifty: ScreenIndex;
+    breadth: {
+      advancers: number;
+      decliners: number;
+      meanChg: number;
+      medianChg: number;
+      aboveEma21: number;
+      aboveEma200: number;
+      trendStack: Record<string, number>;
+    };
+    global: { symbol: string; price: number; changePct: number; date: string }[];
+  };
+  lists: Record<'strength' | 'weakness' | 'volume' | 'breakout20d' | 'breakdown20d' | 'rsiExtremes' | 'resultsSoon', string[]>;
+  stocks: ScreenStock[];
+  hypotheses: ScreenHypothesis[];
+  scoredPrevious: { forSession: string | null; madeOn: string; results: ScreenScoredResult[] } | null;
+  tally: Record<string, { title: string; pass: number; fail: number; inconclusive: number }>;
+}
