@@ -1,0 +1,36 @@
+name: Daily Market Screen
+
+# Builds the end-of-day NIFTY 50 screen (Tradingproject/ml-training/daily_screen.py) after the close and
+# pushes it to the backend for the app's Screen tab: market context, per-stock evidence dossiers, ranked
+# lists, next-session hypotheses, and last session's hypotheses scored. Talks only to the public backend
+# API; no secrets. Descriptive statistics, not recommendations.
+on:
+  schedule:
+    # 10:45 UTC = 16:15 IST, weekdays: the final 15:15 hourly candle is in by then. GitHub's scheduler can run
+    # late; the script also waits up to 45 minutes for the final candle if it starts too early, and upserts by
+    # session date so a second run the same evening is harmless.
+    - cron: "45 10 * * 1-5"
+    - cron: "30 12 * * 1-5"   # backup in case the first slot was skipped
+  workflow_dispatch: {}
+
+jobs:
+  screen:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Tradingproject/ml-training
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            Tradingproject/ml-training
+          sparse-checkout-cone-mode: true
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install pandas numpy
+
+      - run: python daily_screen.py --wait-minutes 45
