@@ -35,6 +35,16 @@ public class GithubActionsDispatchService {
     }
 
     public void triggerDailyAiPrediction() {
+        trigger(properties.workflowFile(), "Daily AI Prediction");
+    }
+
+    /** The end-of-day "Daily Market Screen" workflow - same unreliable-schedule problem, same fix. */
+    public void triggerDailyScreen() {
+        trigger(properties.screenWorkflowFile() == null || properties.screenWorkflowFile().isBlank()
+                ? "daily-screen.yml" : properties.screenWorkflowFile(), "Daily Market Screen");
+    }
+
+    private void trigger(String workflowFile, String label) {
         if (properties.token() == null || properties.token().isBlank()) {
             log.warn("github-dispatch.token not configured — skipping workflow_dispatch trigger; "
                     + "the workflow's own (unreliable) schedule: cron is the only trigger left.");
@@ -46,16 +56,16 @@ public class GithubActionsDispatchService {
             String[] ownerAndRepo = properties.repo().split("/", 2);
             restClient.post()
                     .uri("/repos/{owner}/{repoName}/actions/workflows/{workflowFile}/dispatches",
-                            ownerAndRepo[0], ownerAndRepo[1], properties.workflowFile())
+                            ownerAndRepo[0], ownerAndRepo[1], workflowFile)
                     .header("Authorization", "Bearer " + properties.token())
                     .header("Accept", "application/vnd.github+json")
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(Map.of("ref", "main"))
                     .retrieve()
                     .toBodilessEntity();
-            log.info("Triggered Daily AI Prediction workflow via workflow_dispatch");
+            log.info("Triggered {} workflow via workflow_dispatch", label);
         } catch (Exception e) {
-            log.error("Failed to trigger Daily AI Prediction workflow", e);
+            log.error("Failed to trigger {} workflow", label, e);
         }
     }
 }

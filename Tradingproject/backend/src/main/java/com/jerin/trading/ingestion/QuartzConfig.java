@@ -128,6 +128,46 @@ public class QuartzConfig {
     }
 
     @Bean
+    public JobDetail dailyScreenDispatchJobDetail(GithubActionsDispatchService githubActionsDispatchService) {
+        JobDataMap jobDataMap = new JobDataMap();
+        jobDataMap.put("githubActionsDispatchService", githubActionsDispatchService);
+        return JobBuilder.newJob(DailyScreenDispatchJob.class)
+                .withIdentity("dailyScreenDispatchJob")
+                .usingJobData(jobDataMap)
+                .storeDurably()
+                .build();
+    }
+
+    /**
+     * Triggers the end-of-day "Daily Market Screen" workflow at 16:20 IST, after the 15:45 catch-up ingestion
+     * has stored the final 15:15 candle. Dispatched from here rather than relying on the workflow's own
+     * schedule: cron - found 2026-10-13 that GitHub ran that scheduler hours late (the 08:30 IST AI cron fired at
+     * 15:48 IST) and never ran the new screen workflow at all. The script is idempotent (upserts by session date)
+     * and waits for the final candle, so the 17:30 backup firing is harmless if the first one succeeded.
+     */
+    @Bean
+    public Trigger dailyScreenDispatchTrigger(JobDetail dailyScreenDispatchJobDetail) {
+        return TriggerBuilder.newTrigger()
+                .forJob(dailyScreenDispatchJobDetail)
+                .withIdentity("dailyScreenDispatchTrigger")
+                .withSchedule(CronScheduleBuilder
+                        .cronSchedule("0 20 16 ? * MON-FRI")
+                        .inTimeZone(TimeZone.getTimeZone("Asia/Kolkata")))
+                .build();
+    }
+
+    @Bean
+    public Trigger dailyScreenDispatchBackupTrigger(JobDetail dailyScreenDispatchJobDetail) {
+        return TriggerBuilder.newTrigger()
+                .forJob(dailyScreenDispatchJobDetail)
+                .withIdentity("dailyScreenDispatchBackupTrigger")
+                .withSchedule(CronScheduleBuilder
+                        .cronSchedule("0 30 17 ? * MON-FRI")
+                        .inTimeZone(TimeZone.getTimeZone("Asia/Kolkata")))
+                .build();
+    }
+
+    @Bean
     public JobDetail globalMarketDataJobDetail(GlobalMarketDataService globalMarketDataService) {
         JobDataMap jobDataMap = new JobDataMap();
         jobDataMap.put("globalMarketDataService", globalMarketDataService);

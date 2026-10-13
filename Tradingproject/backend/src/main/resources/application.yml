@@ -32,6 +32,7 @@ github-dispatch:
   token: ${GITHUB_DISPATCH_TOKEN:}
   repo: JerinBenito/jTrading
   workflow-file: daily-ai-prediction.yml
+  screen-workflow-file: daily-screen.yml
 
 server:
   port: ${SERVER_PORT:8080}

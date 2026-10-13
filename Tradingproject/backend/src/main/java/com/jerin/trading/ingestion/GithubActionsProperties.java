@@ -10,6 +10,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record GithubActionsProperties(
         String token,
         String repo,
-        String workflowFile
+        String workflowFile,
+        String screenWorkflowFile
 ) {
 }
