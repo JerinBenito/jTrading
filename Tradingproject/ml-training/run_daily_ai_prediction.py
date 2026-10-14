@@ -160,6 +160,26 @@ SUPPLEMENTARY_FEATURES = [
     "obvMomentum10d",
 ]
 MULTIDAY_FEATURES = MULTIDAY_REQUIRED_FEATURES + SUPPLEMENTARY_FEATURES
+
+
+def select_multiday_features(df):
+    """Same history gate as the same-day model (select_intraday_features), applied 2026-10-14. The young
+    day-constant inputs (pcrLatest, deterministicDeviationPct, hmm/garch, global*, recentPattern*, VIX) are one value
+    per stock per day, so ~35 days behind them is ~35 observations. Replayed as-of each recent day
+    (multiday_asof_test.py) they made 80% (5d) / 66% (10d) of predictions fall BELOW the training mean (mean -0.78%
+    vs +0.13% without them): the same recent-regime fingerprint that gave the same-day model its down-lean. In that
+    falling window the lean even scored better on error (4.4% vs -1.3% against the baseline), which is exactly the
+    luck a regime fingerprint gets - it flips against you when the market turns. Re-run the ablation before each is
+    admitted. Returns (kept, {feature: days_of_history} for the held-out ones)."""
+    kept, gated = [], {}
+    for f in MULTIDAY_FEATURES:
+        if f in HISTORY_GATED_FEATURES and f in df.columns:
+            days = int(df.loc[pd.to_numeric(df[f], errors="coerce").notna(), "tradingDate"].nunique())
+            if days < MIN_HISTORY_DAYS:
+                gated[f] = days
+                continue
+        kept.append(f)
+    return kept, gated
 HORIZONS = [5, 10, 20, 40]
 
 
@@ -541,9 +561,13 @@ def train_multiday_models_per_symbol(symbols):
         # outright. Coerce explicitly; NaN is fine (LightGBM handles missing values natively),
         # "object" is not.
         sub[MULTIDAY_FEATURES] = sub[MULTIDAY_FEATURES].apply(pd.to_numeric, errors="coerce")
+        features, gated = select_multiday_features(sub)
+        if h == HORIZONS[0] and gated:
+            print("  multi-day: held out until they have "
+                  f"{MIN_HISTORY_DAYS} days of history (still recorded): " + ", ".join(f"{f} ({d}d)" for f, d in gated.items()))
         model = LGBMRegressor(n_estimators=200, max_depth=4, learning_rate=0.03,
                                subsample=0.8, colsample_bytree=0.8, random_state=42, verbosity=-1)
-        model.fit(sub[MULTIDAY_FEATURES], sub[target])
+        model.fit(sub[features], sub[target])
         models[h] = model
         baselines[h] = sub[target].mean()
         print(f"  {h}d model trained on {len(sub)} rows, baseline (mean forward return) = {baselines[h]:.4f}%")
@@ -565,10 +589,10 @@ def run_multiday_predictions(df, models, baselines, symbols):
 
         target_date = latest["tradingDate"].date().isoformat()
         anchor_close = float(latest["close"])
-        feature_row = latest[MULTIDAY_FEATURES].to_frame().T.apply(pd.to_numeric, errors="coerce")
+        feature_row = latest[MULTIDAY_FEATURES].to_frame().T.apply(pd.to_numeric, errors="coerce")  # sliced per model below
 
         for h in HORIZONS:
-            predicted_return = float(models[h].predict(feature_row)[0])
+            predicted_return = float(models[h].predict(feature_row[models[h].booster_.feature_name()])[0])
             baseline_return = float(baselines[h])
             post_json("/api/ai-predictions", {
                 "instrument": sym,
