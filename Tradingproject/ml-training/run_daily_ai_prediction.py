@@ -115,7 +115,16 @@ YOUNG_SUPPLEMENTARY_FEATURES = [
 # not a pattern. (Fundamentals are not gated: they are constants per instrument over the whole
 # history, so they say which instrument a row is, not which day.)
 HISTORY_GATED_FEATURES = AI_SELF_FEATURES + YOUNG_SUPPLEMENTARY_FEATURES
-MIN_HISTORY_DAYS = 30
+# Raised 30 -> 120 on 2026-10-14. These inputs are constant within a day (one value per stock per day), so
+# 30 days of history is 30 independent observations however many rows there are. Replaying production as of each
+# recent day (lean_asof_features.py) showed that once pcrLatest / recentPattern* / deterministicDeviationPct
+# passed the 30-day gate they let the trees recognise "which recent days this looks like": 74-86% of hour-0
+# calls predicted DOWN on recent days versus 28-58% without them, with no accuracy gain (error 0.5933% with vs
+# 0.5897% without, direction 49.7% vs 52.0%, rank IC -0.006 vs +0.056). Live calls leaned down 84-98% of the
+# time since 1 Oct for exactly this reason. 120 days (~6 months) is the new bar; re-run the ablation when a
+# feature is about to be admitted. NOT the cause (tested, ruled out): the first-hour reversal logic,
+# partial-candle volume, the market regime, the hour-median centring.
+MIN_HISTORY_DAYS = 120
 MULTIDAY_REQUIRED_FEATURES = [
     "dailyReturnPct", "gapFromPrevClosePct", "intradayRangePct",
     "emaSpreadPct", "rsi14", "atr14",
