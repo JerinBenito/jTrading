@@ -2,6 +2,12 @@ spring:
   application:
     name: signal-backend
 
+  mvc:
+    async:
+      # The full feature export is streamed (see IntradayFeatureExportController); Spring's default 30 s async
+      # timeout cut it off for any client slower than the VM itself. 15 minutes is far above any real download.
+      request-timeout: 900000
+
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5434}/${DB_NAME:trading_signals}
     username: ${DB_USER:trading_signals}

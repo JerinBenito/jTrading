@@ -1,0 +1,57 @@
+name: Health Watchdog
+
+# Fails (so GitHub emails the repo owner about the failed run) when the trading backend is down, or - during
+# market hours on a weekday - when market data has stopped arriving (the usual cause: the daily Upstox login
+# expired). Added 2026-10-21 after a two-day outage (Upstox token expired, then the JVM ran out of memory and
+# stopped answering) went unnoticed. No secrets needed; talks only to the public API.
+# Known false alarm: NSE exchange holidays that fall on a weekday (candles legitimately do not arrive).
+on:
+  schedule:
+    - cron: "*/30 4-10 * * 1-5"   # 09:30-16:30 IST on weekdays
+    - cron: "15 */4 * * *"        # plus a coarse always-on liveness check
+  workflow_dispatch: {}
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check backend health and data freshness
+        shell: python
+        run: |
+          import json, sys, urllib.request
+          from datetime import datetime, timedelta, timezone
+
+          BASE = "https://jerintradingsignal.duckdns.org"
+          problems = []
+
+          def get(path, timeout=30):
+              with urllib.request.urlopen(BASE + path, timeout=timeout) as r:
+                  return r.status, r.read()
+
+          try:
+              status, body = get("/actuator/health")
+              if status != 200 or b'"UP"' not in body:
+                  problems.append(f"health endpoint returned {status}: {body[:120]!r}")
+          except Exception as e:
+              problems.append(f"backend unreachable or unhealthy: {e!r}")
+
+          now_ist = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+          market_hours = now_ist.weekday() < 5 and (10, 15) <= (now_ist.hour, now_ist.minute) <= (16, 30)
+          if not problems and market_hours:
+              try:
+                  _, body = get("/api/monitor/basket")
+                  nifty = next(r for r in json.loads(body) if r["symbol"] == "NIFTY")
+                  last = datetime.fromisoformat(nifty["lastCandleTs"].replace("Z", "+00:00"))
+                  age = datetime.now(timezone.utc) - last
+                  # a healthy day has a new hourly candle each hour; > 3h old during market hours means ingestion stopped
+                  if age > timedelta(hours=3):
+                      problems.append(f"market data is stale: NIFTY's last candle is {nifty['lastCandleTs']} "
+                                      f"({age.total_seconds() / 3600:.1f} h old). Most likely the Upstox login expired - "
+                                      f"open {BASE}/auth/upstox/login-url and sign in again.")
+              except Exception as e:
+                  problems.append(f"could not read market data freshness: {e!r}")
+
+          if problems:
+              print("PROBLEMS:\n- " + "\n- ".join(problems))
+              sys.exit(1)
+          print(f"OK at {now_ist:%Y-%m-%d %H:%M} IST" + (" (market hours: data fresh)" if market_hours else ""))

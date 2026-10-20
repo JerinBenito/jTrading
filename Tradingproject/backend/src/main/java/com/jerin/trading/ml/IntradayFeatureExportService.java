@@ -277,6 +277,14 @@ public class IntradayFeatureExportService {
         return sum / (double) VOLUME_LOOKBACK_DAYS;
     }
 
+    /** NIFTY + BANKNIFTY + the NIFTY 50 basket, in export order. */
+    public List<String> exportTags() {
+        return Stream.concat(
+                Stream.of(Instrument.NIFTY.name(), Instrument.BANKNIFTY.name()),
+                Nifty50Constituents.SYMBOLS.stream()
+        ).toList();
+    }
+
     public List<IntradayFeatureRow> exportAll() {
         List<String> tags = Stream.concat(
                 Stream.of(Instrument.NIFTY.name(), Instrument.BANKNIFTY.name()),
