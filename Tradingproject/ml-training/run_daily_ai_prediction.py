@@ -27,7 +27,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 import joblib
 import numpy as np
@@ -211,13 +211,13 @@ def get_json(path, timeout=60, attempts=3):
     raise last_error
 
 
-def post_json(path, payload):
+def post_json(path, payload, timeout=300):
     # /api/ml/features/backfill-all alone measured ~2m11s for all 52 instruments;
     # 30s was too short and caused a real TimeoutError in production (2026-09-07).
     data = json.dumps(payload).encode()
     req = urllib.request.Request(f"{API_BASE}{path}", data=data,
                                   headers={"Content-Type": "application/json"}, method="POST")
-    with urllib.request.urlopen(req, timeout=300) as resp:
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read())
 
 
@@ -512,6 +512,23 @@ def run_intraday_predictions(models, symbols, latest_day_end_rank, results=None)
     print(f"  submitted {submitted} intraday predictions, skipped {skipped} (no live data yet)")
 
 
+def wait_for_todays_feature_rows(symbols, max_minutes=10):
+    """Polls until the LAST basket symbol (backfill-all works through them in order) has a feature row dated today
+    (IST) - i.e. the refresh the client stopped waiting for has actually finished. True if it did."""
+    today = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).date().isoformat()
+    probe = symbols[-1]
+    deadline = time.time() + max_minutes * 60
+    while time.time() < deadline:
+        try:
+            rows = get_json(f"/api/ml/features/{urllib.parse.quote(probe)}")
+            if rows and rows[-1]["tradingDate"] >= today:
+                return True
+        except (urllib.error.URLError, TimeoutError, ConnectionError):
+            pass
+        time.sleep(30)
+    return False
+
+
 def train_multiday_models_per_symbol(symbols):
     # ml_feature_snapshots is never refreshed automatically (deliberately manual - see
     # MlFeatureSnapshotController) - without this, training silently anchors off whatever day
@@ -519,9 +536,20 @@ def train_multiday_models_per_symbol(symbols):
     # backfill meant Monday's multi-day predictions were still anchored to the prior Friday).
     # Recomputing here means every run - not just a manually-remembered one - anchors off today.
     print("Refreshing ml_feature_snapshots before training...")
-    backfill_result = post_json("/api/ml/features/backfill-all", {})
-    print(f"  refreshed {backfill_result['instrumentsProcessed']} instruments, "
-          f"{backfill_result['totalRowsWritten']} rows written")
+    try:
+        # 103-134 s on an idle server, but the 10:10 IST run (first of the day, right after the 10:00 ingestion)
+        # exceeded the old 300 s limit on 21, 22 and 23 Oct 2026, failing the whole run red and delaying the day's
+        # multi-day predictions by 1-2 hours (the same-day calls were unaffected). 15 minutes is the new limit, and a
+        # timeout is no longer fatal: the server keeps refreshing after the client gives up.
+        backfill_result = post_json("/api/ml/features/backfill-all", {}, timeout=900)
+        print(f"  refreshed {backfill_result['instrumentsProcessed']} instruments, "
+              f"{backfill_result['totalRowsWritten']} rows written")
+    except (TimeoutError, urllib.error.URLError, ConnectionError) as e:
+        print(f"  backfill-all did not answer ({e!r}); the server keeps working on it - waiting for today's rows...")
+        if not wait_for_todays_feature_rows(symbols):
+            print("  today's feature rows are still not there - skipping multi-day predictions this run "
+                  "(the next hourly run retries); same-day predictions above are unaffected")
+            return None
 
     print("\nDownloading multi-day feature data...")
     all_rows = []
@@ -634,8 +662,10 @@ if __name__ == "__main__":
     if already_ran_multiday_today():
         print("\nMulti-day models already ran today - skipping (today's intraday refresh above still happened).")
     else:
-        df, multiday_models, baselines = train_multiday_models_per_symbol(symbols)
-        run_multiday_predictions(df, multiday_models, baselines, symbols)
+        multiday = train_multiday_models_per_symbol(symbols)
+        if multiday is not None:
+            df, multiday_models, baselines = multiday
+            run_multiday_predictions(df, multiday_models, baselines, symbols)
 
     print("\nDone. Evaluate pending predictions later via POST /api/ai-predictions/evaluate-all")
     print("(already wired into the hourly job automatically).")
