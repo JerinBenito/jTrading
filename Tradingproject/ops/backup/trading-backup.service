@@ -1,0 +1,14 @@
+[Unit]
+Description=Nightly backup of the irreplaceable trading database tables
+After=network-online.target trading-signal.service
+Wants=network-online.target
+# a transient GitHub/network failure gets two more tries within the hour before the night is marked failed
+StartLimitIntervalSec=3600
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+User=opc
+ExecStart=/bin/bash /home/opc/backup_db.sh
+Restart=on-failure
+RestartSec=300

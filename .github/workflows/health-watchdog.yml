@@ -35,6 +35,18 @@ jobs:
           except Exception as e:
               problems.append(f"backend unreachable or unhealthy: {e!r}")
 
+          if not problems:
+              try:
+                  _, body = get("/api/ops/backup-status")
+                  info = json.loads(body)
+                  # the backup runs nightly at 02:30 IST; a gap over 36 hours means at least one night failed
+                  if info.get("lastSuccess") is None or (info.get("ageHours") or 0) > 36:
+                      problems.append(f"nightly database backup is stale or missing (last success: {info.get('lastSuccess')}, "
+                                      f"{info.get('ageHours')} h ago). Check: ssh to the app server and run "
+                                      f"'sudo journalctl -u trading-backup.service -n 30'.")
+              except Exception as e:
+                  problems.append(f"could not read the backup status: {e!r}")
+
           now_ist = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
           market_hours = now_ist.weekday() < 5 and (10, 15) <= (now_ist.hour, now_ist.minute) <= (16, 30)
           if not problems and market_hours:
