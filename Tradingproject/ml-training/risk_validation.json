@@ -1,0 +1,28 @@
+{
+ "builtOn": "2026-10-24",
+ "testDays": 240,
+ "stockDays": 11960,
+ "rangeForecast": {
+  "atrlike": {
+   "mae": 0.716,
+   "vsAveragePct": 8.3,
+   "spearman": 0.41
+  },
+  "har": {
+   "mae": 0.691,
+   "vsAveragePct": 11.6,
+   "spearman": 0.453
+  },
+  "mean": {
+   "mae": 0.672,
+   "vsAveragePct": 14.0,
+   "spearman": 0.48
+  }
+ },
+ "q90Coverage": 88.0,
+ "bigMoveThresholdPct": 2.0,
+ "bigMoveAuc": 0.658,
+ "bigMoveBaseRatePct": 17.6,
+ "bigMoveTopDecilePct": 35.8,
+ "pairedTvsHar": 2.88
+}

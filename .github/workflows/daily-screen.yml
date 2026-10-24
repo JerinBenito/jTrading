@@ -31,6 +31,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      - run: pip install pandas numpy
+      - run: pip install pandas numpy lightgbm scikit-learn
 
       - run: python daily_screen.py --wait-minutes 45

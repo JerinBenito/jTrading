@@ -15,6 +15,7 @@ history statistic uses COMPLETED days only.
 Usage: python daily_screen.py [--no-push] [--wait-minutes N]
 """
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -92,11 +93,22 @@ def stock_record(sym, session, feed_close, nifty_chg, results_date):
     oversold_idx = rs_series[rs_series < 32].index
     oversold_idx = oversold_idx[oversold_idx < len(d) - 5]
     p5, p50, p95 = (pctile(nxt, q) for q in (5, 50, 95))
+    # frame for the risk model: completed days + today's final numbers rebuilt from the last hourly candle (live row:
+    # volatilitySoFarPct at the final hour IS the full-day (high-low)/open %, volumeSoFarRatio the full-day volume ratio)
+    frame = d[["tradingDate", "open", "close", "volumeRatio20d", "gapFromPrevClosePct"]].rename(columns={"gapFromPrevClosePct": "gap"}).copy()
+    frame["range"] = (d["high"] - d["low"]) / d["open"] * 100
+    frame["tradingDate"] = pd.to_datetime(frame["tradingDate"])
+    vol_today, rng_today = live.get("volumeSoFarRatio"), live.get("volatilitySoFarPct")
+    frame = pd.concat([frame, pd.DataFrame([{
+        "tradingDate": pd.Timestamp(session), "open": open_today, "close": close,
+        "volumeRatio20d": np.nan if vol_today is None else float(vol_today), "gap": (open_today / y["close"] - 1) * 100,
+        "range": np.nan if rng_today is None else float(rng_today)}])], ignore_index=True)
     levels = {"prevDayHigh": y["high"], "prevDayLow": y["low"], "high20d": d["high"].iloc[-20:].max(), "low20d": d["low"].iloc[-20:].min(),
               "high52w": d["high"].iloc[-252:].max(), "low52w": d["low"].iloc[-252:].min(),
               "ema21": ema(21), "ema50": ema(50), "ema200": ema(200)}
     trend = "up" if ema(9) > ema(21) > ema(50) else "down" if ema(9) < ema(21) < ema(50) else "mixed"
     return {
+        "_frame": frame,
         "symbol": sym, "close": rnd(close), "prevClose": rnd(y["close"]), "chg": rnd(chg), "gap": rnd((open_today / y["close"] - 1) * 100),
         "openToClose": rnd((close / open_today - 1) * 100), "rsNifty": rnd(chg - nifty_chg),
         "volRatio": rnd(live.get("volumeSoFarRatio")), "rsi": rnd(rsi_now, 1), "atrPct": rnd(y["atr14"] / y["close"] * 100),
@@ -114,6 +126,80 @@ def stock_record(sym, session, feed_close, nifty_chg, results_date):
                           "next5dUpPct": rnd(100 * (nxt5.loc[oversold_idx].dropna() > 0).mean(), 0)} if rsi_now < 32 and len(oversold_idx) >= 3 else None),
         },
     }
+
+
+RISK_TIERS = ((30, "High"), (18, "Elevated"), (10, "Normal"), (0, "Low"))
+EVENT_EFFECTS = {   # measured on 240 walk-forward days (vol_forecast_test.py): average next-day swing vs all days
+    "fomc": ("First Indian session after a US Fed decision", "swings averaged about 7% wider"),
+    "rbi": ("RBI policy decision day", "swings averaged about 3% wider"),
+    "expiry": ("Last Tuesday of the month (derivatives expiry)", "swings averaged about 5% narrower"),
+    "monthend": ("Month-end", "swings averaged about 4% wider"),
+}
+
+
+def results_history(symbols):
+    out = {}
+    for sym in symbols:
+        try:
+            out[sym] = [date.fromisoformat(e["resultsDate"]) for e in get(f"/api/results-calendar/{p.quote(sym)}")]
+        except Exception:
+            out[sym] = []
+    return out
+
+
+def session_events(next_session):
+    """Calendar context for the next session (small measured effects - shown as labels, NOT fed to the model)."""
+    ns = date.fromisoformat(next_session)
+    try:
+        ev = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "risk_events.json"), encoding="utf-8"))
+    except Exception:
+        return []
+    out = []
+    fomc_india = {date.fromisoformat(x) + timedelta(days=1) for x in ev["fomc_decision_us_date"]}
+    if ns in fomc_india or (ns.weekday() == 0 and ns - timedelta(days=2) in fomc_india):
+        out.append("fomc")
+    if ns in {date.fromisoformat(x) for x in ev["rbi_decision_date"]}:
+        out.append("rbi")
+    if ns.weekday() == 1 and (ns + timedelta(days=7)).month != ns.month:
+        out.append("expiry")
+    if (ns + timedelta(days=3)).month != ns.month:
+        out.append("monthend")
+    return [{"id": k, "label": EVENT_EFFECTS[k][0], "effect": EVENT_EFFECTS[k][1]} for k in out]
+
+
+def compute_risk(stocks, session, next_session):
+    """Per-stock next-session risk forecast (risk_forecast.py) + a market-level summary. Never raises: on any failure the
+    screen is still built, just without the risk section."""
+    try:
+        import risk_forecast as rf
+        frames = {s["symbol"]: s["_frame"] for s in stocks}
+        d = rf.prepare(frames, results_history(list(frames)))
+        ts = pd.Timestamp(session)
+        models = rf.fit(d[d["tradingDate"] < ts])
+        rows = d[d["tradingDate"] == ts].dropna(subset=rf.FEATS).reset_index(drop=True)
+        mean, q90, big = rf.predict(models, rows)
+        by = {}
+        for i, r in rows.iterrows():
+            prob = 100 * float(big[i])
+            tier = next(label for thr, label in RISK_TIERS if prob >= thr)
+            by[r["instrument"]] = {"expectedRangePct": rnd(mean[i]), "upper90RangePct": rnd(q90[i]), "bigMoveProbPct": rnd(prob, 0),
+                                   "typicalRangePct": rnd(r["r20"]), "vsTypicalX": rnd(mean[i] / r["r20"]), "tier": tier,
+                                   "resultsNext": bool(r["results_next"])}
+        try:
+            validation = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "risk_validation.json"), encoding="utf-8"))
+        except Exception:
+            validation = None
+        vs = [v["vsTypicalX"] for v in by.values()]
+        summary = {"nextSession": next_session, "basketExpectedRangePct": rnd(float(np.mean([v["expectedRangePct"] for v in by.values()]))),
+                   "basketTypicalRangePct": rnd(float(np.mean([v["typicalRangePct"] for v in by.values()]))),
+                   "basketVsTypicalX": rnd(float(np.mean(vs))), "resultsNext": [k for k, v in by.items() if v["resultsNext"]],
+                   "tierCounts": pd.Series([v["tier"] for v in by.values()]).value_counts().to_dict(),
+                   "events": session_events(next_session), "validation": validation,
+                   "note": "Forecasts how BIG tomorrow's swing is (high-low, % of open) - not which way price goes. Big move = close-to-close of 2% or more; probabilities ran a few points low in testing, so read them as approximate."}
+        return by, summary
+    except Exception as e:  # noqa: BLE001
+        print(f"  risk forecast skipped: {e!r}")
+        return {}, None
 
 
 def next_business_day(d):
@@ -225,6 +311,12 @@ def build(prev_screens):
     stocks = []
     for s in syms:
         stocks.append(stock_record(s, session, basket[s]["lastClose"], idx["NIFTY"]["chg"], cal.get(s)))
+    next_session = next_business_day(date.fromisoformat(session)).isoformat()
+    risk_by, risk_summary = compute_risk(stocks, session, next_session)
+    for s_ in stocks:
+        s_.pop("_frame", None)
+        if s_["symbol"] in risk_by:
+            s_["risk"] = risk_by[s_["symbol"]]
     chgs = [s["chg"] for s in stocks]
     adv = int(sum(c > 0 for c in chgs))
     gm = get("/api/global-market/latest")
@@ -248,7 +340,7 @@ def build(prev_screens):
         "dataNote": "Built from the final 15:15 hourly candle and completed daily bars. Today's stored daily row is a mid-morning snapshot and is not used.",
         "notAvailable": ["sector indices", "Asian markets", "gold", "FII/DII flows", "live news", "intraday VWAP"],
         "disclaimer": "Descriptive statistics from your own data - not recommendations. No screened attribute has been shown to predict returns on this basket.",
-        "market": market, "lists": lists, "stocks": stocks, "hypotheses": make_hypotheses(stocks, session),
+        "market": market, "lists": lists, "stocks": stocks, "hypotheses": make_hypotheses(stocks, session), "risk": risk_summary,
     }
     prev = [x for x in prev_screens if x.get("sessionDate") != session]
     scored, tally = score_history(prev, screen)

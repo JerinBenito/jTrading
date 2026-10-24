@@ -353,7 +353,7 @@ def add_results_offset(df, results):
 def push_results_calendar(results):
     """Hands the calendar to the backend for the app's 'results today / soon' flag (best-effort).
     Only the last ~120 days onwards - older dates are history the app does not show."""
-    cutoff = date.today().toordinal() - 120
+    cutoff = date.today().toordinal() - 900
     payload = [{"instrument": sym,
                 "dates": [{"resultsDate": d.isoformat(), "epsEstimate": e} for d, e in items if d.toordinal() >= cutoff]}
                for sym, items in results.items()]

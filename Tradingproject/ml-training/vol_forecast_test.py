@@ -52,6 +52,19 @@ if EARN:
         e = ed.get(s)
         flag.append(0.0 if e is None or pd.isna(d1) else float(np.any((e <= np.datetime64(d1, "D")) & (np.datetime64(d1, "D") - e <= np.timedelta64(1, "D")))))
     df["results_next"] = flag
+# calendar features for the NEXT trading day
+import json as _json
+EV = _json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "risk_events.json")))
+rbi = set(pd.to_datetime(EV["rbi_decision_date"]).date)
+fomc_india = set((pd.to_datetime(EV["fomc_decision_us_date"]) + pd.Timedelta(days=1)).date)   # first Indian session after the US decision
+nd = df.groupby("instrument")["tradingDate"].shift(-1)
+df["rbi_next"] = [float(x.date() in rbi) if pd.notna(x) else 0.0 for x in nd]
+df["fomc_next"] = [float(x.date() in fomc_india or (x.weekday() == 0 and (x - pd.Timedelta(days=2)).date() in fomc_india)) if pd.notna(x) else 0.0 for x in nd]
+def _last_tuesday(x):
+    return float(pd.notna(x) and x.weekday() == 1 and (x + pd.Timedelta(days=7)).month != x.month)
+df["last_tue_next"] = [_last_tuesday(x) for x in nd]
+df["month_end_next"] = [float(pd.notna(x) and (x + pd.Timedelta(days=3)).month != x.month) for x in nd]
+EVENT_FEATS = ["rbi_next", "fomc_next", "last_tue_next", "month_end_next"]
 FEATS = ["r1", "r5", "r20", "absret", "absret5", "atrpct", "volumeRatio20d", "gapFromPrevClosePct", "return5dPct", "return20dPct",
          "mkt_range", "mkt_range5", "dow_next", "results_next"]
 d = df.dropna(subset=FEATS + ["target", "target_ret"]).reset_index(drop=True)
@@ -69,6 +82,8 @@ for fd in folds:
     te["atr"] = te["atrpct"] * (tr["target"].mean() / tr["atrpct"].mean())
     m = LGBMRegressor(n_estimators=300, max_depth=4, learning_rate=0.03, subsample=0.8, colsample_bytree=0.8, random_state=42, verbosity=-1)
     m.fit(tr[FEATS], tr["target"]); te["lgbm"] = m.predict(te[FEATS])
+    m2 = LGBMRegressor(n_estimators=300, max_depth=4, learning_rate=0.03, subsample=0.8, colsample_bytree=0.8, random_state=42, verbosity=-1)
+    m2.fit(tr[FEATS + EVENT_FEATS], tr["target"]); te["lgbm_ev"] = m2.predict(te[FEATS + EVENT_FEATS])
     # direction model for contrast
     md = LGBMRegressor(n_estimators=300, max_depth=4, learning_rate=0.03, subsample=0.8, colsample_bytree=0.8, random_state=42, verbosity=-1)
     md.fit(tr[FEATS], tr["target_ret"]); te["dir_pred"] = md.predict(te[FEATS])
@@ -102,3 +117,13 @@ for k_, lab in (("har", "HAR"), ("lgbm", "LGBM")):
     ratio = r.target / r[k_].clip(lower=0.1)
     q = np.quantile(ratio, 0.9)
     print(f"to cover 90% of next-day ranges, {lab} needs a cushion of x{q:.2f}; typical cushion width = {q * r[k_].mean():.2f}% of price")
+
+print("--- do calendar events help? (LGBM + events vs LGBM without) ---")
+for lab, mask in (("all days", r.index == r.index), ("RBI decision day next", r.rbi_next == 1), ("first Indian session after FOMC", r.fomc_next == 1),
+                  ("last Tuesday of month next", r.last_tue_next == 1), ("month-end next", r.month_end_next == 1)):
+    x = r[mask]
+    if len(x) < 30: print(f"  {lab:34s} n={len(x)} (too few)"); continue
+    print(f"  {lab:34s} n={len(x):6d} mean range {x.target.mean():.2f}% vs {r.target.mean():.2f}% overall | MAE without events {(x.target - x.lgbm).abs().mean():.3f}  with events {(x.target - x.lgbm_ev).abs().mean():.3f}")
+dd = r.assign(a=(r.target - r.lgbm).abs(), b=(r.target - r.lgbm_ev).abs()).groupby("tradingDate")[["a", "b"]].mean()
+diff = dd.a - dd.b; t = diff.mean() / (diff.std(ddof=1) / np.sqrt(len(diff)))
+print(f"  paired over {len(diff)} days: events model better on {100 * (diff > 0).mean():.0f}% of days, mean gain {diff.mean():.4f} pts, t={t:+.2f}")
