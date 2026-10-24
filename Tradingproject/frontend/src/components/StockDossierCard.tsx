@@ -49,6 +49,18 @@ export function StockDossierCard({ stock, sessionDate }: { stock: ScreenStock; s
         </Text>
       )}
 
+      {stock.risk && (
+        <>
+          <Text style={styles.section}>Risk for the next session</Text>
+          <Text style={styles.body}>
+            Expected swing (high to low) about {stock.risk.expectedRangePct.toFixed(1)}% of price — {stock.risk.vsTypicalX.toFixed(2)}× its usual {stock.risk.typicalRangePct.toFixed(1)}%.
+            On a rough day it could reach about {stock.risk.upper90RangePct.toFixed(1)}% (a level it stayed under on about 9 days in 10 in testing). Chance of a close-to-close move of 2% or more:
+            about {stock.risk.bigMoveProbPct.toFixed(0)}% (approximate; it ran a few points low in testing). Risk level: {stock.risk.tier}.
+            {stock.risk.resultsNext ? ' Quarterly results fall around the next session, which usually doubles the typical move.' : ''} This is about size, not direction.
+          </Text>
+        </>
+      )}
+
       <Text style={styles.section}>Price levels (distance from close)</Text>
       {levels.map(([key, v]) => (
         <View key={key} style={styles.levelRow}>

@@ -10,7 +10,7 @@ import { ScreenHeader } from '../../src/components/ScreenHeader';
 import { Card } from '../../src/components/ui/Card';
 import { Badge } from '../../src/components/ui/Badge';
 import { EmptyState, ErrorState, LoadingState } from '../../src/components/ScreenState';
-import type { DailyScreen, ScreenIndex, ScreenScoredResult, ScreenStock } from '../../src/api/types';
+import type { DailyScreen, ScreenIndex, ScreenScoredResult, ScreenStock, ScreenStockRisk } from '../../src/api/types';
 
 const signed = (v: number | null | undefined, digits = 2) =>
   v === null || v === undefined ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(digits)}%`;
@@ -66,6 +66,8 @@ export default function ScreenTab() {
           </View>
 
           <MarketCard data={data} styles={styles} colors={colors} />
+
+          <RiskCard data={data} bySymbol={bySymbol} styles={styles} colors={colors} />
 
           {LISTS.map((list) => {
             const names = data.lists[list.key] ?? [];
@@ -153,6 +155,85 @@ function MarketCard({ data, styles, colors }: { data: DailyScreen; styles: Retur
   );
 }
 
+function tierColor(tier: ScreenStockRisk['tier'], colors: Theme) {
+  if (tier === 'High') return colors.down;
+  if (tier === 'Elevated') return colors.neutral;
+  if (tier === 'Low') return colors.up;
+  return colors.textSecondary;
+}
+
+function RiskCard({
+  data,
+  bySymbol,
+  styles,
+  colors,
+}: {
+  data: DailyScreen;
+  bySymbol: Map<string, ScreenStock>;
+  styles: ReturnType<typeof createStyles>;
+  colors: Theme;
+}) {
+  const risk = data.risk;
+  if (!risk) return null;
+  const withRisk = data.stocks.filter((s) => s.risk);
+  const most = [...withRisk].sort((a, b) => (b.risk!.bigMoveProbPct ?? 0) - (a.risk!.bigMoveProbPct ?? 0)).slice(0, 8);
+  const calmest = [...withRisk].sort((a, b) => (a.risk!.bigMoveProbPct ?? 0) - (b.risk!.bigMoveProbPct ?? 0)).slice(0, 5);
+  const v = risk.validation;
+  const tiers = ['High', 'Elevated', 'Normal', 'Low'] as const;
+  const row = (s: ScreenStock) => (
+    <Pressable key={s.symbol} style={styles.row} onPress={() => router.push(`/stock/${s.symbol}`)}>
+      <Text style={styles.rowSymbol} numberOfLines={1}>
+        {s.symbol}
+      </Text>
+      <Badge label={s.risk!.tier.toUpperCase()} color={tierColor(s.risk!.tier, colors)} />
+      <Text style={styles.riskRange}>{s.risk!.expectedRangePct.toFixed(1)}%</Text>
+      <Text style={styles.riskChance}>{s.risk!.bigMoveProbPct.toFixed(0)}%</Text>
+    </Pressable>
+  );
+  return (
+    <Card title={`Risk for ${risk.nextSession}`} subtitle="How BIG tomorrow's swing is expected to be — not which way the price goes">
+      <Text style={styles.riskHeadline}>
+        Basket swing expected {risk.basketExpectedRangePct.toFixed(2)}% (a typical day: {risk.basketTypicalRangePct.toFixed(2)}%) —{' '}
+        <Text style={{ color: risk.basketVsTypicalX > 1.1 ? colors.neutral : colors.textPrimary }}>{risk.basketVsTypicalX.toFixed(2)}× normal</Text>
+      </Text>
+      <View style={styles.chipRow}>
+        {tiers.map((t) =>
+          risk.tierCounts[t] ? <Badge key={t} label={`${risk.tierCounts[t]} ${t.toUpperCase()}`} color={tierColor(t, colors)} /> : null
+        )}
+      </View>
+      {risk.resultsNext.length > 0 && (
+        <Text style={[styles.body, { color: colors.neutral }]}>Results due around the next session: {risk.resultsNext.join(', ')}. Moves are typically about twice as large.</Text>
+      )}
+      {risk.events.map((e) => (
+        <Text key={e.id} style={styles.hypMeta}>
+          {e.label}: historically {e.effect} (a small effect).
+        </Text>
+      ))}
+
+      <Text style={styles.section}>Biggest swings expected</Text>
+      <View style={styles.riskHead}>
+        <Text style={[styles.rowSymbol, styles.riskHeadText]}>Stock</Text>
+        <Text style={[styles.riskRange, styles.riskHeadText]}>Swing</Text>
+        <Text style={[styles.riskChance, styles.riskHeadText]}>{`${v?.bigMoveThresholdPct ?? 2}%+ move`}</Text>
+      </View>
+      {most.map(row)}
+
+      <Text style={styles.section}>Calmest expected</Text>
+      {calmest.map(row)}
+
+      <Text style={styles.section}>How reliable is this?</Text>
+      <Text style={styles.hypMeta}>{risk.note}</Text>
+      {v && (
+        <Text style={styles.hypMeta}>
+          Tested on {v.testDays} past days it ranked swings with correlation {v.rangeForecast.mean.spearman.toFixed(2)} versus{' '}
+          {v.rangeForecast.atrlike.spearman.toFixed(2)} for the usual ATR method. The 90% upper range held {v.q90Coverage.toFixed(0)}% of days. Days it flagged as top-10% risk saw a{' '}
+          {v.bigMoveThresholdPct}%+ move {v.bigMoveTopDecilePct.toFixed(0)}% of the time versus {v.bigMoveBaseRatePct.toFixed(0)}% on an average day. The ranking is useful; the exact percentages are approximate. It does not predict direction.
+        </Text>
+      )}
+    </Card>
+  );
+}
+
 function outcomeColor(o: ScreenScoredResult['outcome'], colors: Theme) {
   if (o === 'PASS') return colors.up;
   if (o === 'FAIL') return colors.down;
@@ -226,6 +307,12 @@ function createStyles(colors: Theme) {
     hypTitle: { flex: 1, color: colors.textPrimary, fontSize: 13, fontWeight: '700' },
     hypClaim: { color: colors.textPrimary, fontSize: 12, lineHeight: 18 },
     hypMeta: { color: colors.textMuted, fontSize: 11, lineHeight: 16 },
+    chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 },
+    riskHeadline: { color: colors.textPrimary, fontSize: 13, fontWeight: '700', lineHeight: 19, marginTop: 8 },
+    riskHead: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 4 },
+    riskHeadText: { color: colors.textMuted, fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
+    riskRange: { width: 56, color: colors.textPrimary, fontSize: 12, fontWeight: '700', textAlign: 'right' },
+    riskChance: { width: 62, color: colors.textSecondary, fontSize: 12, fontWeight: '600', textAlign: 'right' },
     section: { color: colors.textSecondary, fontSize: 11, fontWeight: '800', letterSpacing: 0.4, marginTop: 16, textTransform: 'uppercase' },
   });
 }

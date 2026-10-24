@@ -209,6 +209,7 @@ export interface ScreenLevel {
 }
 
 export interface ScreenStock {
+  risk?: ScreenStockRisk;
   symbol: string;
   close: number;
   prevClose: number;
@@ -297,6 +298,38 @@ export interface DailyScreen {
   lists: Record<'strength' | 'weakness' | 'volume' | 'breakout20d' | 'breakdown20d' | 'rsiExtremes' | 'resultsSoon', string[]>;
   stocks: ScreenStock[];
   hypotheses: ScreenHypothesis[];
+  risk?: ScreenRiskSummary | null;
   scoredPrevious: { forSession: string | null; madeOn: string; results: ScreenScoredResult[] } | null;
   tally: Record<string, { title: string; pass: number; fail: number; inconclusive: number }>;
+}
+
+/** Next-session risk forecast (ml-training/risk_forecast.py): how BIG the swing is, not which way. Descriptive, not advice. */
+export interface ScreenStockRisk {
+  expectedRangePct: number;
+  upper90RangePct: number;
+  bigMoveProbPct: number;
+  typicalRangePct: number;
+  vsTypicalX: number;
+  tier: 'High' | 'Elevated' | 'Normal' | 'Low';
+  resultsNext: boolean;
+}
+
+export interface ScreenRiskSummary {
+  nextSession: string;
+  basketExpectedRangePct: number;
+  basketTypicalRangePct: number;
+  basketVsTypicalX: number;
+  resultsNext: string[];
+  tierCounts: Record<string, number>;
+  events: { id: string; label: string; effect: string }[];
+  note: string;
+  validation: {
+    testDays: number;
+    rangeForecast: Record<'atrlike' | 'har' | 'mean', { mae: number; vsAveragePct: number; spearman: number }>;
+    q90Coverage: number;
+    bigMoveAuc: number;
+    bigMoveBaseRatePct: number;
+    bigMoveTopDecilePct: number;
+    bigMoveThresholdPct: number;
+  } | null;
 }
