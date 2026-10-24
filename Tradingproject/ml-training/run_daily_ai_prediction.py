@@ -403,6 +403,52 @@ def conformal_range_scales(df, features):
     return scales
 
 
+CORP_ACTION_GAP_PCT = 25.0
+CORP_ACTION_WINDOW_DAYS = 45
+
+
+def drop_corporate_action_windows(df, flagged, window=CORP_ACTION_WINDOW_DAYS):
+    """Drops, per instrument, every row within `window` trading days of a flagged day. Upstox adjusts candles for splits and
+    bonuses but NOT for demergers: Tata Motors' Oct 2025 demerger shows as fake overnight steps of about -36% and -40% (TMPV),
+    which would otherwise enter as real returns - squared-error models (multi-day) in particular get dragged by ~40 such rows
+    per horizon. `flagged` is {instrument: [dates]}. Returns (filtered df, number of rows dropped)."""
+    if not flagged:
+        return df, 0
+    keep = np.ones(len(df), dtype=bool)
+    for inst, days in flagged.items():
+        idx = np.where(df["instrument"].to_numpy() == inst)[0]
+        if len(idx) == 0:
+            continue
+        trading_days = np.array(sorted(pd.unique(df["tradingDate"].iloc[idx])))
+        pos = {d: i for i, d in enumerate(trading_days)}
+        bad = set()
+        for d in days:
+            if d in pos:
+                bad.update(trading_days[max(0, pos[d] - window): pos[d] + window + 1])
+        if bad:
+            keep[idx[df["tradingDate"].iloc[idx].isin(bad).to_numpy()]] = False
+    return df[keep], int((~keep).sum())
+
+
+def corporate_action_days_intraday(df):
+    """{instrument: [days]} where the overnight gap (first hourly candle's open vs the previous day's last close) exceeds
+    CORP_ACTION_GAP_PCT - an unadjusted corporate action rather than a real move."""
+    d = df[["instrument", "tradingDate", "hoursSinceOpen", "currentPrice", "returnSoFarPct"]].copy()
+    d["currentPrice"] = pd.to_numeric(d["currentPrice"], errors="coerce")
+    d["returnSoFarPct"] = pd.to_numeric(d["returnSoFarPct"], errors="coerce")
+    d = d.sort_values(["instrument", "tradingDate", "hoursSinceOpen"])
+    last = d.groupby(["instrument", "tradingDate"])["currentPrice"].last().reset_index().rename(columns={"currentPrice": "lastClose"})
+    last["prevClose"] = last.groupby("instrument")["lastClose"].shift(1)
+    first = d[d["hoursSinceOpen"] == 0].copy()
+    first["open"] = first["currentPrice"] / (1 + first["returnSoFarPct"] / 100)
+    m = first.merge(last[["instrument", "tradingDate", "prevClose"]], on=["instrument", "tradingDate"])
+    m["gap"] = (m["open"] / m["prevClose"] - 1) * 100
+    out = {}
+    for inst, grp in m[m["gap"].abs() > CORP_ACTION_GAP_PCT].groupby("instrument"):
+        out[inst] = list(grp["tradingDate"])
+    return out
+
+
 def train_intraday_model(results=None):
     print("Training intraday model on full history...")
     rows = get_json("/api/ml/intraday-features/all", timeout=420)
@@ -410,6 +456,9 @@ def train_intraday_model(results=None):
     df = add_basket_volume_rank(df)
     df = add_prev_day_volume_rank(df)
     df = add_results_offset(df, results or {})
+    df, dropped = drop_corporate_action_windows(df, corporate_action_days_intraday(df))
+    if dropped:
+        print(f"  dropped {dropped} intraday rows within {CORP_ACTION_WINDOW_DAYS} days of an unadjusted corporate action (demerger)")
     df["intradayObv"] = pd.to_numeric(df["returnSoFarPct"], errors="coerce") * \
         pd.to_numeric(df["volumeSoFarRatio"], errors="coerce")
     # aiPriorDay* (added 2026-09-17) is 100% null for every row before that date - with no
@@ -587,7 +636,7 @@ def train_multiday_models_per_symbol(symbols):
         # exceeded the old 300 s limit on 21, 22 and 23 Oct 2026, failing the whole run red and delaying the day's
         # multi-day predictions by 1-2 hours (the same-day calls were unaffected). 15 minutes is the new limit, and a
         # timeout is no longer fatal: the server keeps refreshing after the client gives up.
-        backfill_result = post_json("/api/ml/features/backfill-all", {}, timeout=900)
+        backfill_result = post_json("/api/ml/features/backfill-all?recentDays=90", {}, timeout=900)
         print(f"  refreshed {backfill_result['instrumentsProcessed']} instruments, "
               f"{backfill_result['totalRowsWritten']} rows written")
     except (TimeoutError, urllib.error.URLError, ConnectionError) as e:
@@ -605,6 +654,11 @@ def train_multiday_models_per_symbol(symbols):
     df = pd.DataFrame(all_rows)
     df["tradingDate"] = pd.to_datetime(df["tradingDate"])
     df = df.sort_values(["instrument", "tradingDate"])
+    flagged = {i: list(g.loc[pd.to_numeric(g["dailyReturnPct"], errors="coerce").abs() > CORP_ACTION_GAP_PCT, "tradingDate"])
+               for i, g in df.groupby("instrument")}
+    df, dropped = drop_corporate_action_windows(df, {i: d for i, d in flagged.items() if d})
+    if dropped:
+        print(f"  dropped {dropped} daily rows within {CORP_ACTION_WINDOW_DAYS} days of an unadjusted corporate action (demerger)")
     # See MULTIDAY_FEATURES' comment - reused for both training (below) and live prediction
     # (run_multiday_predictions reads the same enriched df), so this only needs computing once.
     df["bigMoveVolumeInteraction"] = pd.to_numeric(df["dailyReturnPct"], errors="coerce") * \

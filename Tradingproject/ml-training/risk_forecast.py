@@ -15,6 +15,8 @@ import pandas as pd
 from lightgbm import LGBMClassifier, LGBMRegressor
 
 BIG_MOVE_PCT = 2.0
+CORP_ACTION_PCT = 25.0
+CORP_ACTION_WINDOW = 25
 FEATS = ["r1", "r5", "r14", "r20", "absret", "absret5", "volumeRatio20d", "gap", "ret5", "ret20", "mkt_range", "mkt_range5",
          "dow_next", "results_next"]
 _PARAMS = dict(n_estimators=300, max_depth=4, learning_rate=0.03, subsample=0.8, colsample_bytree=0.8, random_state=42, verbosity=-1)
@@ -51,6 +53,14 @@ def prepare(frames, results_dates=None):
         rd = np.array(sorted(pd.to_datetime(list(results_dates.get(sym, []))).values.astype("datetime64[D]"))) if results_dates else np.array([], dtype="datetime64[D]")
         nd = f["next_date"].values.astype("datetime64[D]")
         f["results_next"] = [float(len(rd) > 0 and np.any((rd <= d) & (d - rd <= np.timedelta64(1, "D")))) for d in nd]
+        # unadjusted corporate actions (e.g. Tata Motors' Oct 2025 demerger: fake -36% / -40% steps) are not real swings
+        flagged = np.where(f["ret"].abs().to_numpy() > CORP_ACTION_PCT)[0]
+        if len(flagged):
+            bad = np.zeros(len(f), dtype=bool)
+            for k in flagged:
+                bad[max(0, k - CORP_ACTION_WINDOW): k + CORP_ACTION_WINDOW + 1] = True
+            bad[-1] = False                      # never drop the prediction row
+            f = f[~bad]
         parts.append(f)
     d = pd.concat(parts, ignore_index=True)
     mk = d.groupby("tradingDate")["range"].mean()

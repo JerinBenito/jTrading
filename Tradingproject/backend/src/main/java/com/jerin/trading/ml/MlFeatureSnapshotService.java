@@ -57,6 +57,16 @@ public class MlFeatureSnapshotService {
 
     @Transactional
     public MlFeatureSnapshotResult computeAndSave(String instrumentTag) {
+        return computeAndSave(instrumentTag, null);
+    }
+
+    /**
+     * @param recentDays when non-null, only the last N trading days' rows are (re)written. Old days never change except
+     *     their forward returns (known only after 5-40 days) and a revised candle, so a refresh of the last ~90 days is exact
+     *     while avoiding rewriting the whole multi-year history (about 58,000 rows, ~270 s, once hourly history reached 2022).
+     */
+    @Transactional
+    public MlFeatureSnapshotResult computeAndSave(String instrumentTag, Integer recentDays) {
         List<OhlcvCandle> hourly = candleRepository.findByInstrumentAndIntervalOrderByTsAsc(instrumentTag, SOURCE_INTERVAL);
         List<OhlcvCandle> daily = DailyBarAggregator.aggregate(hourly);
         if (daily.size() < LOOKBACK_HORIZONS[LOOKBACK_HORIZONS.length - 1] + 1) {
@@ -72,7 +82,8 @@ public class MlFeatureSnapshotService {
         SupplementaryFeatureService.Context supplementary = supplementaryFeatureService.contextFor(instrumentTag);
         int minLookback = LOOKBACK_HORIZONS[LOOKBACK_HORIZONS.length - 1];
         int saved = 0;
-        for (int i = minLookback; i < daily.size(); i++) {
+        int firstIndex = recentDays == null ? minLookback : Math.max(minLookback, daily.size() - recentDays);
+        for (int i = firstIndex; i < daily.size(); i++) {
             MlFeatureSnapshot snapshot = buildSnapshot(instrumentTag, daily, closes, ema9Series, ema21Series, rsiSeries, atrSeries, i, supplementary);
             snapshotRepository.save(snapshot);
             saved++;
@@ -201,6 +212,10 @@ public class MlFeatureSnapshotService {
     }
 
     public List<MlFeatureSnapshotResult> backfillAll() {
+        return backfillAll(null);
+    }
+
+    public List<MlFeatureSnapshotResult> backfillAll(Integer recentDays) {
         List<String> tags = Stream.concat(
                 Stream.of(Instrument.NIFTY.name(), Instrument.BANKNIFTY.name()),
                 Nifty50Constituents.SYMBOLS.stream()
@@ -208,7 +223,7 @@ public class MlFeatureSnapshotService {
 
         List<MlFeatureSnapshotResult> results = new ArrayList<>();
         for (String tag : tags) {
-            results.add(computeAndSave(tag));
+            results.add(computeAndSave(tag, recentDays));
         }
         return results;
     }

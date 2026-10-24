@@ -1,28 +1,28 @@
 {
  "builtOn": "2026-10-24",
- "testDays": 240,
- "stockDays": 11960,
+ "testDays": 600,
+ "stockDays": 29728,
  "rangeForecast": {
   "atrlike": {
-   "mae": 0.716,
-   "vsAveragePct": 8.3,
-   "spearman": 0.41
+   "mae": 0.765,
+   "vsAveragePct": 7.9,
+   "spearman": 0.415
   },
   "har": {
-   "mae": 0.691,
-   "vsAveragePct": 11.6,
-   "spearman": 0.453
+   "mae": 0.738,
+   "vsAveragePct": 11.2,
+   "spearman": 0.456
   },
   "mean": {
-   "mae": 0.672,
-   "vsAveragePct": 14.0,
-   "spearman": 0.48
+   "mae": 0.726,
+   "vsAveragePct": 12.6,
+   "spearman": 0.49
   }
  },
- "q90Coverage": 88.0,
+ "q90Coverage": 89.3,
  "bigMoveThresholdPct": 2.0,
- "bigMoveAuc": 0.658,
- "bigMoveBaseRatePct": 17.6,
- "bigMoveTopDecilePct": 35.8,
- "pairedTvsHar": 2.88
+ "bigMoveAuc": 0.66,
+ "bigMoveBaseRatePct": 16.8,
+ "bigMoveTopDecilePct": 36.1,
+ "pairedTvsHar": 2.3
 }

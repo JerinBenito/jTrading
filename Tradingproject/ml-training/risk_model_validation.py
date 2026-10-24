@@ -25,8 +25,9 @@ results = {s: list(x["date"].dt.date) for s, x in ev.groupby("instrument")}
 frames = {s: g[["tradingDate", "open", "close", "range", "volumeRatio20d", "gap"]] for s, g in raw.groupby("instrument")}
 d = rf.prepare(frames, results)
 d = d.dropna(subset=rf.FEATS + ["target_range", "target_absret"]).reset_index(drop=True)
-days = sorted(d["tradingDate"].unique()); test_days = days[-240:]
-folds = [test_days[i * 40:(i + 1) * 40] for i in range(6)]
+N_TEST = int(os.environ.get("N_TEST", 240))
+days = sorted(d["tradingDate"].unique()); test_days = days[-N_TEST:]
+folds = [test_days[i * 40:(i + 1) * 40] for i in range(N_TEST // 40)]
 out = []
 for fd in folds:
     tr = d[d["tradingDate"] < fd[0] - pd.Timedelta(days=2)]
@@ -58,6 +59,9 @@ print("calibration by decile (predicted vs observed %):")
 for _, row in cal.iterrows(): print(f"   pred {100 * row.pred:5.1f}%  observed {100 * row.obs:5.1f}%  (n={int(row.n)})")
 top = r[r.big >= r.big.quantile(0.9)]
 print(f"top-10% flagged days: observed big-move rate {100 * (top.target_absret >= rf.BIG_MOVE_PCT).mean():.1f}% vs base {100 * y.mean():.1f}%")
+# stability by calendar year
+for yr, gy in r.groupby(r.tradingDate.dt.year):
+    print(f"   {yr}: range Spearman model {stats.spearmanr(gy['mean'], gy.target_range)[0]:+.3f} vs HAR {stats.spearmanr(gy.har, gy.target_range)[0]:+.3f} vs ATR-like {stats.spearmanr(gy.atrlike, gy.target_range)[0]:+.3f} (n={len(gy)})")
 # paired by day vs HAR
 dd = r.assign(a=(r.target_range - r.har).abs(), b=(r.target_range - r["mean"]).abs()).groupby("tradingDate")[["a", "b"]].mean()
 diff = dd.a - dd.b; t = diff.mean() / (diff.std(ddof=1) / np.sqrt(len(diff)))

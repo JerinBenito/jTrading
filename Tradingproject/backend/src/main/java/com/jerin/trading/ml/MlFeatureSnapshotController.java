@@ -30,8 +30,8 @@ public class MlFeatureSnapshotController {
 
     /** Same, for NIFTY + BANKNIFTY + the full NIFTY 50 basket in one call. */
     @PostMapping("/backfill-all")
-    public Map<String, Object> backfillAll() {
-        List<MlFeatureSnapshotResult> results = snapshotService.backfillAll();
+    public Map<String, Object> backfillAll(@org.springframework.web.bind.annotation.RequestParam(required = false) Integer recentDays) {
+        List<MlFeatureSnapshotResult> results = snapshotService.backfillAll(recentDays);
         int totalRows = results.stream().mapToInt(MlFeatureSnapshotResult::rowsWritten).sum();
         return Map.of("instrumentsProcessed", results.size(), "totalRowsWritten", totalRows, "results", results);
     }
