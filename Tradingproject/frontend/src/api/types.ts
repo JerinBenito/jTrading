@@ -333,3 +333,14 @@ export interface ScreenRiskSummary {
     bigMoveThresholdPct: number;
   } | null;
 }
+
+/** Same-day "how far can it still move before the close" forecast (ml-training/swing_model.py) - risk context, not a price call. */
+export interface IntradayRiskForecast {
+  instrument: string;
+  targetDate: string;
+  hoursSinceOpen: number;
+  predictedAt: string;
+  currentPrice: number | null;
+  expectedSwingPct: number;
+  upper90SwingPct: number;
+}

@@ -10,6 +10,7 @@ import { useLiveFeed } from '../../src/hooks/useLiveFeed';
 import { api } from '../../src/api/client';
 import { resultsExplanation } from '../../src/utils/results';
 import { StockDossierCard } from '../../src/components/StockDossierCard';
+import { RemainingSwingCard } from '../../src/components/RemainingSwingCard';
 import { TrajectoryChart } from '../../src/components/TrajectoryChart';
 import { BacktestResultTable } from '../../src/components/BacktestResultTable';
 import { IntradayReanchorTable } from '../../src/components/IntradayReanchorTable';
@@ -39,6 +40,7 @@ export default function StockDetailScreen() {
   const aiSnapshots = useApiData(() => api.getAiPredictionSnapshots(symbol), [symbol]);
   const upcomingResults = useApiData(() => api.getResultsUpcoming(7), []);
   const dailyScreen = useApiData(() => api.getDailyScreen(), []);
+  const intradayRisk = useApiData(() => api.getIntradayRisk(symbol), [symbol]);
   const dossier = dailyScreen.data?.stocks.find((s) => s.symbol === symbol);
   const results = (upcomingResults.data ?? []).find((e) => e.instrument === symbol);
   const live = useLiveFeed(symbol);
@@ -58,6 +60,7 @@ export default function StockDetailScreen() {
     aiSnapshots.refresh();
     upcomingResults.refresh();
     dailyScreen.refresh();
+    intradayRisk.refresh();
     setTimeout(() => setManualRefreshing(false), 600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -140,6 +143,8 @@ export default function StockDetailScreen() {
           </Text>
         </>
       )}
+
+      <RemainingSwingCard forecasts={intradayRisk.data ?? []} />
 
       {dossier && dailyScreen.data && <StockDossierCard stock={dossier} sessionDate={dailyScreen.data.sessionDate} />}
 

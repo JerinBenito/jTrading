@@ -8,6 +8,7 @@ import type {
   DailyTrajectory,
   GlobalMarketSnapshot,
   HealthStatus,
+  IntradayRiskForecast,
   IntradayReanchorBacktestResult,
   ModelLeaderboard,
   Prediction,
@@ -119,6 +120,9 @@ export const api = {
   /** Quarterly results from yesterday through `days` ahead, whole basket — drives the "results today/soon" flag. */
   getResultsUpcoming: (days: number = 7) =>
     getJson<ResultsCalendarEntry[]>(`/api/results-calendar/upcoming?days=${days}`),
+
+  /** Today's same-day remaining-swing forecasts for one instrument, oldest checkpoint first (empty outside trading days). */
+  getIntradayRisk: (instrument: string) => getJson<IntradayRiskForecast[]>(`/api/intraday-risk/${instrument}`),
 
   /** Latest end-of-day screen (market context, per-stock evidence, next-session hypotheses); null before the first one is built. */
   getDailyScreen: () => getJsonOrNull<DailyScreen>('/api/daily-screen/latest'),
