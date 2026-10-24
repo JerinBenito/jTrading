@@ -39,6 +39,7 @@ public record LiveFeatureSnapshot(
         Double aiTodayFirstNudgePct,
         Double aiTodayLastNudgePct,
         Double aiTodayLastStepPct,
-        Double aiTodayLastDriftFromFirstPct
+        Double aiTodayLastDriftFromFirstPct,
+        double lastCandleRangePct
 ) {
 }

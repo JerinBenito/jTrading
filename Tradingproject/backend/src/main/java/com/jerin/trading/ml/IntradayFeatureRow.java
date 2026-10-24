@@ -46,6 +46,10 @@ public record IntradayFeatureRow(
         Double aiTodayFirstNudgePct,
         Double aiTodayLastNudgePct,
         Double aiTodayLastStepPct,
-        Double aiTodayLastDriftFromFirstPct
+        Double aiTodayLastDriftFromFirstPct,
+        /** (high - low) of the latest hourly candle as % of the current price - the 'last 60 minutes' range. */
+        double lastCandleRangePct,
+        /** TARGET for the remaining-swing model: (highest high - lowest low of the candles AFTER this one) / current price, in %. Null on the last candle. */
+        Double remainingSwingPct
 ) {
 }

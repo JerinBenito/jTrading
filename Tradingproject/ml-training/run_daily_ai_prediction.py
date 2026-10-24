@@ -508,7 +508,15 @@ def train_intraday_model(results=None):
     if conformal:
         print("  conformal range widening by hour (fraction of range width): "
               + ", ".join(f"h{h} {v:+.3f}" for h, v in sorted(conformal.items())))
-    return models, latest_day_end_rank, conformal
+    swing = None
+    try:
+        import swing_model as sm
+        sw_models = sm.fit(sm.training_frame(df))
+        swing = {"models": sw_models, "history": sm.history_for_live(df)}
+        print("  trained the same-day remaining-swing models")
+    except Exception as e:  # noqa: BLE001 - a risk-forecast failure must never cost a day's price predictions
+        print(f"  remaining-swing model skipped: {e!r}")
+    return models, latest_day_end_rank, conformal, swing
 
 
 def select_intraday_features(df):
@@ -537,7 +545,26 @@ def live_feature_row(live, model):
     return pd.DataFrame([live])[names].apply(pd.to_numeric, errors="coerce")
 
 
-def run_intraday_predictions(models, symbols, latest_day_end_rank, results=None, conformal=None):
+def push_remaining_swing(swing, live_by_symbol):
+    """Same-day remaining-swing forecast (swing_model.py) for every instrument with a live row, pushed to /api/intraday-risk.
+    Best-effort: never raises."""
+    try:
+        import swing_model as sm
+        offsets = {sym: (v.get("resultsDayOffset")) for sym, v in live_by_symbol.items()}
+        rows = sm.live_rows(live_by_symbol, swing["history"], offsets)
+        if rows.empty:
+            return
+        mean, q90 = sm.predict(swing["models"], rows)
+        payload = [{"instrument": r["instrument"], "targetDate": r["tradingDate"], "hoursSinceOpen": int(r["hoursSinceOpen"]),
+                    "currentPrice": round(float(r["currentPrice"]), 4), "expectedSwingPct": round(float(mean[i]), 4),
+                    "upper90SwingPct": round(float(q90[i]), 4), "modelVersion": MODEL_VERSION} for i, r in rows.iterrows()]
+        post_json("/api/intraday-risk", payload)
+        print(f"  pushed {len(payload)} same-day remaining-swing forecasts")
+    except Exception as e:  # noqa: BLE001
+        print(f"  remaining-swing push skipped: {e!r}")
+
+
+def run_intraday_predictions(models, symbols, latest_day_end_rank, results=None, conformal=None, swing=None):
     """Deliberately overwrites today's existing INTRADAY prediction every time this runs (the
     backend upserts by instrument+horizon+day) rather than skipping if one already exists - a
     later call in the same day means a fresher live snapshot with more of today's actual price
@@ -571,6 +598,9 @@ def run_intraday_predictions(models, symbols, latest_day_end_rank, results=None,
         ranks = pd.Series(ratios).rank(pct=True)
         for sym, rank in ranks.items():
             live_by_symbol[sym]["basketVolumeRankPct"] = float(rank)
+
+    if swing is not None:
+        push_remaining_swing(swing, live_by_symbol)
 
     submitted, skipped = 0, len(symbols) - len(live_by_symbol)
     for sym, live in live_by_symbol.items():
@@ -755,8 +785,8 @@ if __name__ == "__main__":
     print("Fetching the quarterly-results calendar...")
     results_calendar = fetch_results_dates(symbols)
     push_results_calendar(results_calendar)
-    intraday_models, latest_day_end_rank, conformal = train_intraday_model(results_calendar)
-    run_intraday_predictions(intraday_models, symbols, latest_day_end_rank, results_calendar, conformal)
+    intraday_models, latest_day_end_rank, conformal, swing = train_intraday_model(results_calendar)
+    run_intraday_predictions(intraday_models, symbols, latest_day_end_rank, results_calendar, conformal, swing)
 
     # Multi-day: only needs one real run per day - its features/target don't change intraday.
     if already_ran_multiday_today():

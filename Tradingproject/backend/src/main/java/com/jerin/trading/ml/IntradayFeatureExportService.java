@@ -96,6 +96,15 @@ public class IntradayFeatureExportService {
             double runningLow = Double.POSITIVE_INFINITY;
             long volumeSoFar = 0;
             boolean volumeKnown = true;
+            // highest high / lowest low of every candle AFTER index h (for the remaining-swing target)
+            double[] sufHigh = new double[today.size() + 1];
+            double[] sufLow = new double[today.size() + 1];
+            sufHigh[today.size()] = Double.NEGATIVE_INFINITY;
+            sufLow[today.size()] = Double.POSITIVE_INFINITY;
+            for (int q = today.size() - 1; q >= 0; q--) {
+                sufHigh[q] = Math.max(sufHigh[q + 1], today.get(q).getHigh().doubleValue());
+                sufLow[q] = Math.min(sufLow[q + 1], today.get(q).getLow().doubleValue());
+            }
             LocalDate tradingLocalDate = today.get(0).getTs().atZoneSameInstant(IST).toLocalDate();
             String tradingDate = tradingLocalDate.toString();
             Double trailingAvgDailyVolume = trailingAvgVolume(dailyBars, i);
@@ -161,7 +170,9 @@ public class IntradayFeatureExportService {
                         dayFeatures.aiPriorDayDirectionCorrect(), dayFeatures.aiPriorDayRevisionGradientPct(),
                         dayFeatures.aiPriorDayFirstCallErrorPct(),
                         aiToday.firstCallNudgePct(), aiToday.lastCallNudgePct(),
-                        aiToday.lastCallStepPct(), aiToday.lastCallDriftFromFirstPct()));
+                        aiToday.lastCallStepPct(), aiToday.lastCallDriftFromFirstPct(),
+                        range / currentPrice * 100,
+                        h + 1 < today.size() ? (sufHigh[h + 1] - sufLow[h + 1]) / currentPrice * 100 : null));
             }
             globalIndex += today.size();
         }
@@ -256,7 +267,8 @@ public class IntradayFeatureExportService {
                 dayFeatures.aiPriorDayDirectionCorrect(), dayFeatures.aiPriorDayRevisionGradientPct(),
                 dayFeatures.aiPriorDayFirstCallErrorPct(),
                 aiToday.firstCallNudgePct(), aiToday.lastCallNudgePct(),
-                aiToday.lastCallStepPct(), aiToday.lastCallDriftFromFirstPct()));
+                aiToday.lastCallStepPct(), aiToday.lastCallDriftFromFirstPct(),
+                range / currentPrice * 100));
     }
 
     /** Average total daily volume over the {@value #VOLUME_LOOKBACK_DAYS} trading days strictly
