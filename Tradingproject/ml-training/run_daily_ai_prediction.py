@@ -366,6 +366,43 @@ def push_results_calendar(results):
         print(f"  could not push results calendar ({e!r}) - app flag may be stale, predictions unaffected")
 
 
+CONFORMAL_DAYS = 60
+CONFORMAL_COVERAGE = 0.9
+
+
+def conformal_range_scales(df, features):
+    """Per-hour range-widening factors, added 2026-10-14 after the live 90% ranges held the close only 86.9% (first
+    call) / 78.2% (last call) of the time. Split-conformal calibration (range_calibration_test.py): fit the same
+    low/high quantile models on all days EXCEPT the last CONFORMAL_DAYS, score those held-out days by how far the
+    close fell outside the range as a fraction of the range width, and take the per-hour 90% quantile s_h. A live
+    range [lo, hi] becomes [lo - s_h*(hi-lo), hi + s_h*(hi-lo)] (s_h may be slightly negative = shrink).
+    Walk-forward over 240 days: coverage 86.4% -> 88.2%, pinball slightly better, ranges ~6% wider; a 120-day window
+    did not help (volatility drifts), so the window stays recent. Width-relative so it transfers to the indices.
+    Returns {} (no change) if there is too little history."""
+    days = sorted(df["tradingDate"].unique())
+    if len(days) < CONFORMAL_DAYS + 120:
+        return {}
+    cal_start = days[-CONFORMAL_DAYS]
+    cal_train = df[df["tradingDate"] < cal_start]
+    cal = df[(df["tradingDate"] >= cal_start) & ~df["instrument"].isin(["NIFTY", "BANKNIFTY"])]
+    hour_median = cal_train.groupby("hoursSinceOpen")["remainingDriftPct"].median()
+    target = cal_train["remainingDriftPct"] - cal_train["hoursSinceOpen"].map(hour_median)
+    preds = []
+    for alpha in (QUANTILE_LOW_ALPHA, QUANTILE_HIGH_ALPHA):
+        mdl = LGBMRegressor(n_estimators=300, max_depth=5, learning_rate=0.03, subsample=0.8, colsample_bytree=0.8,
+                            random_state=42, verbosity=-1, objective="quantile", alpha=alpha)
+        mdl.fit(cal_train[features], target)
+        preds.append(mdl.predict(cal[features]))
+    lo, hi = np.minimum(*preds), np.maximum(*preds)
+    y = cal["remainingDriftPct"].to_numpy()
+    score = np.maximum(lo - y, y - hi) / np.maximum(hi - lo, 1e-6)
+    scales = {}
+    for hour, grp in pd.Series(score).groupby(cal["hoursSinceOpen"].to_numpy()):
+        n = len(grp)
+        scales[int(hour)] = float(np.quantile(grp, min(1.0, np.ceil((n + 1) * CONFORMAL_COVERAGE) / n)))
+    return scales
+
+
 def train_intraday_model(results=None):
     print("Training intraday model on full history...")
     rows = get_json("/api/ml/intraday-features/all", timeout=420)
@@ -418,7 +455,11 @@ def train_intraday_model(results=None):
     # made today, since today itself isn't in this historical set yet.
     latest_day_end_rank = (df.sort_values(["instrument", "tradingDate", "hoursSinceOpen"])
                               .groupby("instrument")["basketVolumeRankPct"].last())
-    return models, latest_day_end_rank
+    conformal = conformal_range_scales(df, features)
+    if conformal:
+        print("  conformal range widening by hour (fraction of range width): "
+              + ", ".join(f"h{h} {v:+.3f}" for h, v in sorted(conformal.items())))
+    return models, latest_day_end_rank, conformal
 
 
 def select_intraday_features(df):
@@ -447,7 +488,7 @@ def live_feature_row(live, model):
     return pd.DataFrame([live])[names].apply(pd.to_numeric, errors="coerce")
 
 
-def run_intraday_predictions(models, symbols, latest_day_end_rank, results=None):
+def run_intraday_predictions(models, symbols, latest_day_end_rank, results=None, conformal=None):
     """Deliberately overwrites today's existing INTRADAY prediction every time this runs (the
     backend upserts by instrument+horizon+day) rather than skipping if one already exists - a
     later call in the same day means a fresher live snapshot with more of today's actual price
@@ -493,6 +534,11 @@ def run_intraday_predictions(models, symbols, latest_day_end_rank, results=None)
         # "low" model's output lands above "median" or "high" (quantile crossing) - sort rather
         # than assume it can't happen, so the recorded range is always internally consistent.
         low_drift, median_drift, high_drift = sorted(drifts.values())
+        # clamp to [-0.3, +0.3]: the walk-forward never needed more than +0.25, and an uncapped +0.50 (hour 5, latest
+        # 60-day window) would double the range on one volatile stretch
+        scale = min(0.3, max(-0.3, (conformal or {}).get(int(live.get("hoursSinceOpen") or 0), 0.0)))   # see conformal_range_scales
+        width = high_drift - low_drift
+        low_drift, high_drift = low_drift - scale * width, high_drift + scale * width
         predicted_close = current_price * (1 + median_drift / 100)
         range_low = current_price * (1 + low_drift / 100)
         range_high = current_price * (1 + high_drift / 100)
@@ -655,8 +701,8 @@ if __name__ == "__main__":
     print("Fetching the quarterly-results calendar...")
     results_calendar = fetch_results_dates(symbols)
     push_results_calendar(results_calendar)
-    intraday_models, latest_day_end_rank = train_intraday_model(results_calendar)
-    run_intraday_predictions(intraday_models, symbols, latest_day_end_rank, results_calendar)
+    intraday_models, latest_day_end_rank, conformal = train_intraday_model(results_calendar)
+    run_intraday_predictions(intraday_models, symbols, latest_day_end_rank, results_calendar, conformal)
 
     # Multi-day: only needs one real run per day - its features/target don't change intraday.
     if already_ran_multiday_today():
