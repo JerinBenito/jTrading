@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 
 @RestController
 @RequestMapping("/api/forecast")
@@ -73,8 +74,22 @@ public class ForecastController {
      *  {@code instrument} accepts NIFTY/BANKNIFTY or any NIFTY 50 basket symbol (Phase D). */
     @GetMapping("/{instrument}/daily-backtest")
     public List<ForecastBacktestResult> dailyBacktest(@PathVariable String instrument) {
-        return dailyForecastBacktestService.backtest(instrument);
+        // The only slow stock-page endpoint (3-7 s: it replays every historical day). Its inputs are hourly candles that
+        // change at most once an hour, so a 20-minute per-instrument cache is invisible to the user and removes the wait.
+        long now = System.currentTimeMillis();
+        CachedBacktest cached = dailyBacktestCache.get(instrument);
+        if (cached != null && now - cached.storedAtMillis() < DAILY_BACKTEST_TTL_MILLIS) {
+            return cached.results();
+        }
+        List<ForecastBacktestResult> fresh = dailyForecastBacktestService.backtest(instrument);
+        dailyBacktestCache.put(instrument, new CachedBacktest(fresh, now));
+        return fresh;
     }
+
+    private record CachedBacktest(List<ForecastBacktestResult> results, long storedAtMillis) {}
+
+    private static final long DAILY_BACKTEST_TTL_MILLIS = 20 * 60 * 1000L;
+    private final ConcurrentHashMap<String, CachedBacktest> dailyBacktestCache = new ConcurrentHashMap<>();
 
     /** Same-day open-to-close: compares correction strategies (none / naive-20-avg / significance-gated). */
     @GetMapping("/{instrument}/daily-bias-correction-backtest")
