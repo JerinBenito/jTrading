@@ -25,11 +25,44 @@ public class UpstoxTokenStore {
     private static final Logger log = LoggerFactory.getLogger(UpstoxTokenStore.class);
 
     private final AtomicReference<String> accessToken = new AtomicReference<>();
+    /**
+     * Upstox "Analytics Token": a read-only token valid for one year, generated once in the Upstox Developer
+     * Apps console (Analytics tab) - no daily OAuth login. It covers market quotes, historical/intraday candles,
+     * the option chain, fundamentals and the market-data websocket, which is everything this app reads. When the
+     * file exists it is PREFERRED over the daily OAuth token, so an accidental OAuth login cannot replace a
+     * one-year token with a one-day one. Added 2026-10-24 after the daily login lapsed and stopped data collection.
+     */
+    private final AtomicReference<String> analyticsToken = new AtomicReference<>();
     private final Path tokenFile;
+    private final Path analyticsTokenFile;
 
-    public UpstoxTokenStore(@Value("${upstox.token-file:/home/opc/upstox-token.dat}") String tokenFilePath) {
+    public UpstoxTokenStore(@Value("${upstox.token-file:/home/opc/upstox-token.dat}") String tokenFilePath,
+                            @Value("${upstox.analytics-token-file:/home/opc/upstox-analytics-token.dat}") String analyticsTokenFilePath) {
         this.tokenFile = Path.of(tokenFilePath);
+        this.analyticsTokenFile = Path.of(analyticsTokenFilePath);
         loadFromDisk();
+        loadAnalyticsToken();
+    }
+
+    private void loadAnalyticsToken() {
+        try {
+            if (Files.exists(analyticsTokenFile)) {
+                String token = Files.readString(analyticsTokenFile).strip();
+                if (!token.isBlank()) {
+                    analyticsToken.set(token);
+                    log.info("Using the long-lived Upstox Analytics Token from {} (no daily login needed; "
+                            + "valid one year from when it was generated)", analyticsTokenFile);
+                }
+            }
+        } catch (IOException e) {
+            log.warn("Failed to read the Upstox Analytics Token from {} - falling back to the daily login token",
+                    analyticsTokenFile, e);
+        }
+    }
+
+    /** True when a one-year Analytics Token is in use (so the daily OAuth login is not needed). */
+    public boolean usingAnalyticsToken() {
+        return analyticsToken.get() != null;
     }
 
     private void loadFromDisk() {
@@ -58,6 +91,10 @@ public class UpstoxTokenStore {
     }
 
     public String getOrThrow() {
+        String analytics = analyticsToken.get();
+        if (analytics != null) {
+            return analytics;
+        }
         String token = accessToken.get();
         if (token == null) {
             throw new IllegalStateException(
