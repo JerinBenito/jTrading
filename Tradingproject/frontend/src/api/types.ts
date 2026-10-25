@@ -344,3 +344,103 @@ export interface IntradayRiskForecast {
   expectedSwingPct: number;
   upper90SwingPct: number;
 }
+
+/** MCX commodity report built by ml-training/commodity_report.py (see GET /api/commodities/latest). */
+export interface CommodityLevel {
+  pct: number;
+  price: number;
+}
+
+export interface CommodityForecast {
+  label: string;
+  days: number;
+  expiry?: string;
+  peak: { p50: CommodityLevel; p75: CommodityLevel; p90: CommodityLevel };
+  dip: { p50: CommodityLevel; p75: CommodityLevel; p90: CommodityLevel };
+  close: { p10: CommodityLevel; p50: CommodityLevel; p90: CommodityLevel };
+  givebackMedianPct: number;
+}
+
+export interface CommodityContract {
+  symbol: string;
+  key: string;
+  expiry: string;
+  daysToExpiry: number;
+  tradingDaysToExpiry: number;
+  price: number;
+  asOf: string;
+  volume: number;
+  avgVolume5: number;
+  dayChangePct: number | null;
+  isReference: boolean;
+  spreadVsRefPct: number;
+  carryAnnualPct?: number | null;
+}
+
+export interface CommodityOptionImplied {
+  expiry: string;
+  daysToExpiry: number;
+  underlying: string | null;
+  futuresPrice: number;
+  strike: number;
+  call: number;
+  put: number;
+  straddle: number;
+  expectedMovePct: number;
+  impliedVolAnnualPct: number;
+  oneSigmaMovePct: number;
+  vsRealizedVol: number;
+  note: string;
+}
+
+export interface CommodityAfterSimilarMoves {
+  bucket: string;
+  trailingMovePct: number;
+  z: number;
+  samples: number;
+  pUp: number;
+  pUpOthers: number;
+  meanCloseZ: number;
+  meanCloseZOthers: number;
+  t: number;
+  peakMedianPct: number;
+  peakP90Pct: number;
+  dipMedianPct: number;
+  dipP90Pct: number;
+  distinguishableFromNormal: boolean;
+}
+
+export interface CommodityProduct {
+  underlying: string;
+  family: string;
+  familyName: string;
+  name: string;
+  priceUnit: string;
+  lotUnits: number;
+  price: number;
+  referenceContract: string;
+  dayChangePct: number | null;
+  asOf: string;
+  lotNotional: number;
+  contracts: CommodityContract[];
+  termStructure: string;
+  sigmaDailyPct: number;
+  sigmaAnnualPct: number;
+  trail21Pct: number;
+  trailZ: number;
+  trailBucket: string;
+  forecasts: CommodityForecast[];
+  afterSimilarMoves: CommodityAfterSimilarMoves;
+  hasOptions: boolean;
+  options: { expiries: { date: string; daysToExpiry: number }[]; implied: CommodityOptionImplied | null } | null;
+  stale: boolean;
+}
+
+export interface CommodityReport {
+  reportDate: string;
+  generatedAt: string;
+  sessionComplete: boolean;
+  products: CommodityProduct[];
+  validation: { quantilesBuilt: string; history: Record<string, string>; q90Coverage: Record<string, Record<string, { peak?: number; dip?: number }>> };
+  notes: string[];
+}

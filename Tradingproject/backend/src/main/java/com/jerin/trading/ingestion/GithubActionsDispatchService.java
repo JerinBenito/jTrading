@@ -44,6 +44,11 @@ public class GithubActionsDispatchService {
                 ? "daily-screen.yml" : properties.screenWorkflowFile(), "Daily Market Screen");
     }
 
+    /** The MCX commodity report workflow - dispatched from the VM's scheduler for the same reason as the others. */
+    public void triggerCommodityReport() {
+        trigger("commodity-report.yml", "Commodity Report");
+    }
+
     private void trigger(String workflowFile, String label) {
         if (properties.token() == null || properties.token().isBlank()) {
             log.warn("github-dispatch.token not configured — skipping workflow_dispatch trigger; "

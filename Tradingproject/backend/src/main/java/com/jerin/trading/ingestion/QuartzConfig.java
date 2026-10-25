@@ -168,6 +168,43 @@ public class QuartzConfig {
     }
 
     @Bean
+    public JobDetail commodityReportDispatchJobDetail(GithubActionsDispatchService githubActionsDispatchService) {
+        JobDataMap jobDataMap = new JobDataMap();
+        jobDataMap.put("githubActionsDispatchService", githubActionsDispatchService);
+        return JobBuilder.newJob(CommodityReportDispatchJob.class)
+                .withIdentity("commodityReportDispatchJob")
+                .usingJobData(jobDataMap)
+                .storeDurably()
+                .build();
+    }
+
+    /**
+     * Triggers the MCX "Commodity Report" workflow at 23:50 IST (after the MCX close at 23:30, or 23:55 during US
+     * daylight saving) and at 12:30 IST (a mid-session refresh). The script upserts by date, so repeats are harmless.
+     */
+    @Bean
+    public Trigger commodityReportDispatchTrigger(JobDetail commodityReportDispatchJobDetail) {
+        return TriggerBuilder.newTrigger()
+                .forJob(commodityReportDispatchJobDetail)
+                .withIdentity("commodityReportDispatchTrigger")
+                .withSchedule(CronScheduleBuilder
+                        .cronSchedule("0 50 23 ? * MON-FRI")
+                        .inTimeZone(TimeZone.getTimeZone("Asia/Kolkata")))
+                .build();
+    }
+
+    @Bean
+    public Trigger commodityReportMidSessionTrigger(JobDetail commodityReportDispatchJobDetail) {
+        return TriggerBuilder.newTrigger()
+                .forJob(commodityReportDispatchJobDetail)
+                .withIdentity("commodityReportMidSessionTrigger")
+                .withSchedule(CronScheduleBuilder
+                        .cronSchedule("0 30 12 ? * MON-FRI")
+                        .inTimeZone(TimeZone.getTimeZone("Asia/Kolkata")))
+                .build();
+    }
+
+    @Bean
     public JobDetail globalMarketDataJobDetail(GlobalMarketDataService globalMarketDataService) {
         JobDataMap jobDataMap = new JobDataMap();
         jobDataMap.put("globalMarketDataService", globalMarketDataService);

@@ -4,6 +4,7 @@ import type {
   DailyScreen,
   BacktestResult,
   BasketSnapshot,
+  CommodityReport,
   CompanyFundamental,
   DailyTrajectory,
   GlobalMarketSnapshot,
@@ -126,4 +127,6 @@ export const api = {
 
   /** Latest end-of-day screen (market context, per-stock evidence, next-session hypotheses); null before the first one is built. */
   getDailyScreen: () => getJsonOrNull<DailyScreen>('/api/daily-screen/latest'),
+  /** Latest MCX commodity report (contracts, expiries, option-implied moves, peak/dip ranges); null before the first one is built. */
+  getCommodityReport: () => getJsonOrNull<CommodityReport>('/api/commodities/latest'),
 };

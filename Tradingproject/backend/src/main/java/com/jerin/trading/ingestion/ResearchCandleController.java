@@ -40,6 +40,7 @@ public class ResearchCandleController {
 
     @GetMapping("/candles/{symbol}")
     public List<List<Number>> candles(@PathVariable String symbol,
+                                      @RequestParam(required = false) String instrumentKey,
                                       @RequestParam(defaultValue = "minutes") String unit,
                                       @RequestParam(defaultValue = "1") int interval,
                                       @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
@@ -49,12 +50,14 @@ public class ResearchCandleController {
         if (expected == null || expected.isBlank() || !expected.equals(key)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);              // looks like it does not exist
         }
-        String instrumentKey;
-        if ("NIFTY".equals(symbol) || "BANKNIFTY".equals(symbol)) {
-            instrumentKey = Instrument.valueOf(symbol).brokerKey();
-        } else {
-            Optional<String> resolved = equityBasketIngestionService.findInstrumentKey(symbol);
-            instrumentKey = resolved.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "unknown symbol"));
+        // an explicit instrumentKey (e.g. an MCX commodity contract "MCX_FO|571306") overrides the symbol lookup
+        if (instrumentKey == null || instrumentKey.isBlank()) {
+            if ("NIFTY".equals(symbol) || "BANKNIFTY".equals(symbol)) {
+                instrumentKey = Instrument.valueOf(symbol).brokerKey();
+            } else {
+                Optional<String> resolved = equityBasketIngestionService.findInstrumentKey(symbol);
+                instrumentKey = resolved.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "unknown symbol"));
+            }
         }
         List<List<Number>> rows = new ArrayList<>();
         for (Candle c : brokerClient.getCandles(instrumentKey, unit, interval, from, to)) {

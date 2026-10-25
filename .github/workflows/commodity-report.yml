@@ -1,0 +1,33 @@
+name: Commodity Report
+
+# Builds the MCX commodity report (Tradingproject/ml-training/commodity_report.py) and pushes it to the backend for the app's
+# Commodities tab: live gold / silver / crude / natural gas / copper / aluminium futures with expiry dates and carry, the
+# option-implied move to the next option expiry, and volatility-scaled peak / dip ranges. Talks only to the public backend API
+# and the public Upstox instrument file; no secrets. The backend's own scheduler dispatches this at 12:30 and 23:50 IST
+# (GitHub's own cron runs hours late on this repo); the cron lines below are only a backup. Descriptive ranges, not advice.
+on:
+  schedule:
+    - cron: "30 18 * * 1-5"   # 00:00 IST backup (after the 23:50 IST dispatch)
+  workflow_dispatch: {}
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Tradingproject/ml-training
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            Tradingproject/ml-training
+          sparse-checkout-cone-mode: true
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install pandas numpy
+
+      - run: python commodity_report.py
