@@ -14,7 +14,7 @@ import pandas as pd
 B = "https://jerintradingsignal.duckdns.org"
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "fo")
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"}
-WORKERS = int(sys.argv[1]) if len(sys.argv) > 1 else 4
+WORKERS = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 4      # (also imported by iv_live.py, whose argv is not ours)
 ALIASES = {"TMPV": "TATAMOTORS"}                     # the file uses the pre-demerger ticker for older dates
 MON = [m.upper() for m in calendar.month_abbr[1:]]
 

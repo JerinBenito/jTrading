@@ -167,6 +167,9 @@ def session_events(next_session):
     return [{"id": k, "label": EVENT_EFFECTS[k][0], "effect": EVENT_EFFECTS[k][1]} for k in out]
 
 
+IV_DEADLINE = None          # set from --wait-iv-minutes: how long to wait for tonight's NSE F&O bhavcopy before going without it
+
+
 def compute_risk(stocks, session, next_session):
     """Per-stock next-session risk forecast (risk_forecast.py) + a market-level summary. Never raises: on any failure the
     screen is still built, just without the risk section."""
@@ -175,16 +178,40 @@ def compute_risk(stocks, session, next_session):
         frames = {s["symbol"]: s["_frame"] for s in stocks}
         d = rf.prepare(frames, results_history(list(frames)))
         ts = pd.Timestamp(session)
-        models = rf.fit(d[d["tradingDate"] < ts])
+        iv_hist = pd.DataFrame(columns=["date", "sym", "iv30"])
+        try:                                          # option-implied volatility (NSE F&O bhavcopy); any failure just means "no IV tonight"
+            import iv_live
+            iv_hist = iv_live.top_up(iv_live.load_history(), frames, session, IV_DEADLINE, log=print)
+            d = iv_live.attach(d, iv_hist)
+        except Exception as e:  # noqa: BLE001
+            print(f"  implied vol unavailable tonight: {e!r}")
+        train = d[d["tradingDate"] < ts]
+        models = rf.fit(train)
         rows = d[d["tradingDate"] == ts].dropna(subset=rf.FEATS).reset_index(drop=True)
         mean, q90, big = rf.predict(models, rows)
+        iv_on = np.zeros(len(rows), dtype=bool)
+        if "iv30" in rows.columns:
+            iv_cols = ["iv30", "iv_d", "iv_rel", "iv_chg"]
+            have = rows[iv_cols].notna().all(axis=1).to_numpy()
+            tr_iv = train.dropna(subset=iv_cols)
+            if have.sum() >= 30 and len(tr_iv) >= 5000:
+                iv_models = rf.fit(tr_iv, rf.FEATS + iv_cols)
+                # Implied vol sharpens the EXPECTED range (walk-forward, 600 days: paired t = +7), but it made the 90% band too tight
+                # (88.0% vs 89.6%) and did not help the big-move probability - so only the expected range uses it.
+                m2 = rf.predict(iv_models, rows[have])[0]
+                mean = mean.copy()
+                mean[have] = m2
+                q90 = np.maximum(q90, mean)
+                iv_on = have
+        print(f"  risk model: implied-vol version for {int(iv_on.sum())} of {len(rows)} stocks (IV history to {iv_hist['date'].max() if len(iv_hist) else 'n/a'})")
         by = {}
         for i, r in rows.iterrows():
             prob = 100 * float(big[i])
             tier = next(label for thr, label in RISK_TIERS if prob >= thr)
             by[r["instrument"]] = {"expectedRangePct": rnd(mean[i]), "upper90RangePct": rnd(q90[i]), "bigMoveProbPct": rnd(prob, 0),
                                    "typicalRangePct": rnd(r["r20"]), "vsTypicalX": rnd(mean[i] / r["r20"]), "tier": tier,
-                                   "resultsNext": bool(r["results_next"])}
+                                   "resultsNext": bool(r["results_next"]), "ivUsed": bool(iv_on[i]),
+                                   "impliedVolPct": rnd(r["iv30"], 1) if iv_on[i] else None}
         try:
             validation = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "risk_validation.json"), encoding="utf-8"))
         except Exception:
@@ -194,7 +221,7 @@ def compute_risk(stocks, session, next_session):
                    "basketTypicalRangePct": rnd(float(np.mean([v["typicalRangePct"] for v in by.values()]))),
                    "basketVsTypicalX": rnd(float(np.mean(vs))), "resultsNext": [k for k, v in by.items() if v["resultsNext"]],
                    "tierCounts": pd.Series([v["tier"] for v in by.values()]).value_counts().to_dict(),
-                   "events": session_events(next_session), "validation": validation,
+                   "events": session_events(next_session), "validation": validation, "impliedVolStocks": int(sum(v["ivUsed"] for v in by.values())),
                    "note": "Forecasts how BIG tomorrow's swing is (high-low, % of open) - not which way price goes. Big move = close-to-close of 2% or more; over 600 test days the probabilities tracked what actually happened closely at the top (35.8% predicted vs 36.1% observed) and ran about 1-2 points low at the bottom, so read them as approximate."}
         return by, summary
     except Exception as e:  # noqa: BLE001
@@ -352,6 +379,9 @@ def main():
     args = sys.argv[1:]
     wait = int(args[args.index("--wait-minutes") + 1]) if "--wait-minutes" in args else 0
     deadline = time.time() + wait * 60
+    global IV_DEADLINE
+    if "--wait-iv-minutes" in args:
+        IV_DEADLINE = time.time() + int(args[args.index("--wait-iv-minutes") + 1]) * 60
     while True:
         try:
             try:

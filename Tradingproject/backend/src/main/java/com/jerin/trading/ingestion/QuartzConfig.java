@@ -139,11 +139,12 @@ public class QuartzConfig {
     }
 
     /**
-     * Triggers the end-of-day "Daily Market Screen" workflow at 16:20 IST, after the 15:45 catch-up ingestion
-     * has stored the final 15:15 candle. Dispatched from here rather than relying on the workflow's own
+     * Triggers the end-of-day "Daily Market Screen" workflow at 19:20 IST. It was 16:20 until the risk model started using
+     * option-implied volatility: NSE publishes the day's F&O bhavcopy (where that comes from) around 18:30-19:30 IST, and the
+     * script waits for it for up to 75 minutes. The 15:45 catch-up ingestion has long since stored the final 15:15 candle. Dispatched from here rather than relying on the workflow's own
      * schedule: cron - found 2026-10-13 that GitHub ran that scheduler hours late (the 08:30 IST AI cron fired at
      * 15:48 IST) and never ran the new screen workflow at all. The script is idempotent (upserts by session date)
-     * and waits for the final candle, so the 17:30 backup firing is harmless if the first one succeeded.
+     * and waits for the final candle, so the 20:30 backup firing is harmless if the first one succeeded.
      */
     @Bean
     public Trigger dailyScreenDispatchTrigger(JobDetail dailyScreenDispatchJobDetail) {
@@ -151,7 +152,7 @@ public class QuartzConfig {
                 .forJob(dailyScreenDispatchJobDetail)
                 .withIdentity("dailyScreenDispatchTrigger")
                 .withSchedule(CronScheduleBuilder
-                        .cronSchedule("0 20 16 ? * MON-FRI")
+                        .cronSchedule("0 20 19 ? * MON-FRI")
                         .inTimeZone(TimeZone.getTimeZone("Asia/Kolkata")))
                 .build();
     }
@@ -162,7 +163,7 @@ public class QuartzConfig {
                 .forJob(dailyScreenDispatchJobDetail)
                 .withIdentity("dailyScreenDispatchBackupTrigger")
                 .withSchedule(CronScheduleBuilder
-                        .cronSchedule("0 30 17 ? * MON-FRI")
+                        .cronSchedule("0 30 20 ? * MON-FRI")
                         .inTimeZone(TimeZone.getTimeZone("Asia/Kolkata")))
                 .build();
     }

@@ -312,6 +312,9 @@ export interface ScreenStockRisk {
   vsTypicalX: number;
   tier: 'High' | 'Elevated' | 'Normal' | 'Low';
   resultsNext: boolean;
+  /** True when the expected range also used the options market's implied volatility (NSE F&O bhavcopy). */
+  ivUsed?: boolean;
+  impliedVolPct?: number | null;
 }
 
 export interface ScreenRiskSummary {

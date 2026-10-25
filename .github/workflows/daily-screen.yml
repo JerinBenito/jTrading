@@ -6,11 +6,12 @@ name: Daily Market Screen
 # API; no secrets. Descriptive statistics, not recommendations.
 on:
   schedule:
-    # 10:45 UTC = 16:15 IST, weekdays: the final 15:15 hourly candle is in by then. GitHub's scheduler can run
-    # late; the script also waits up to 45 minutes for the final candle if it starts too early, and upserts by
-    # session date so a second run the same evening is harmless.
-    - cron: "45 10 * * 1-5"
-    - cron: "30 12 * * 1-5"   # backup in case the first slot was skipped
+    # 13:50 UTC = 19:20 IST, weekdays: NSE's F&O bhavcopy (the source of the option-implied volatility the risk model uses) is
+    # published around 18:30-19:30 IST, and the script waits up to 75 minutes for it, then goes without if it never appears
+    # (or if NSE cannot be reached from the runner). GitHub's scheduler can run late; the script upserts by session date,
+    # so a second run the same evening is harmless. The backend's own scheduler dispatches this at 19:20 and 20:30 IST.
+    - cron: "50 13 * * 1-5"
+    - cron: "0 15 * * 1-5"    # backup in case the first slot was skipped
   workflow_dispatch: {}
 
 jobs:
@@ -31,6 +32,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      - run: pip install pandas numpy lightgbm scikit-learn
+      - run: pip install pandas numpy scipy lightgbm scikit-learn
 
-      - run: python daily_screen.py --wait-minutes 45
+      - run: python daily_screen.py --wait-minutes 45 --wait-iv-minutes 75

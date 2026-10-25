@@ -1,28 +1,56 @@
 {
- "builtOn": "2026-10-24",
+ "builtOn": "2026-10-25",
  "testDays": 600,
- "stockDays": 29728,
+ "stockDays": 26635,
  "rangeForecast": {
   "atrlike": {
-   "mae": 0.765,
-   "vsAveragePct": 7.9,
-   "spearman": 0.415
+   "mae": 0.748,
+   "vsAveragePct": 6.3,
+   "spearman": 0.394
   },
   "har": {
-   "mae": 0.738,
-   "vsAveragePct": 11.2,
-   "spearman": 0.456
+   "mae": 0.721,
+   "vsAveragePct": 9.6,
+   "spearman": 0.435
   },
   "mean": {
-   "mae": 0.726,
-   "vsAveragePct": 12.6,
-   "spearman": 0.49
+   "mae": 0.6871,
+   "vsAveragePct": 13.9,
+   "spearman": 0.489
+  },
+  "meanWithoutImpliedVol": {
+   "mae": 0.7068,
+   "vsAveragePct": 11.5,
+   "spearman": 0.473
   }
  },
- "q90Coverage": 89.3,
+ "q90Coverage": 89.6,
  "bigMoveThresholdPct": 2.0,
- "bigMoveAuc": 0.66,
- "bigMoveBaseRatePct": 16.8,
- "bigMoveTopDecilePct": 36.1,
- "pairedTvsHar": 2.3
+ "bigMoveAuc": 0.654,
+ "bigMoveBaseRatePct": 16.4,
+ "bigMoveTopDecilePct": 34.8,
+ "pairedTvsHar": 8.32,
+ "impliedVol": {
+  "withImpliedVol": {
+   "mae": 0.6871,
+   "vsAveragePct": 13.9,
+   "spearman": 0.489,
+   "q90Coverage": 89.6,
+   "q90WorstRolling60": 86.8,
+   "bigMoveAuc": 0.654,
+   "bigMoveTopDecilePct": 34.8,
+   "bigMovePredictedTopDecilePct": 34.3
+  },
+  "withoutImpliedVol": {
+   "mae": 0.7068,
+   "vsAveragePct": 11.5,
+   "spearman": 0.473,
+   "q90Coverage": 89.6,
+   "q90WorstRolling60": 86.8,
+   "bigMoveAuc": 0.654,
+   "bigMoveTopDecilePct": 34.8,
+   "bigMovePredictedTopDecilePct": 34.3
+  },
+  "pairedTvsWithout": 7.11
+ }
 }

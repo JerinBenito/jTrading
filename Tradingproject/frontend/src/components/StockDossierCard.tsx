@@ -56,7 +56,10 @@ export function StockDossierCard({ stock, sessionDate }: { stock: ScreenStock; s
             Expected swing (high to low) about {stock.risk.expectedRangePct.toFixed(1)}% of price — {stock.risk.vsTypicalX.toFixed(2)}× its usual {stock.risk.typicalRangePct.toFixed(1)}%.
             On a rough day it could reach about {stock.risk.upper90RangePct.toFixed(1)}% (a level it stayed under on about 9 days in 10 in testing). Chance of a close-to-close move of 2% or more:
             about {stock.risk.bigMoveProbPct.toFixed(0)}% (approximate; it ran a few points low in testing). Risk level: {stock.risk.tier}.
-            {stock.risk.resultsNext ? ' Quarterly results fall around the next session, which usually doubles the typical move.' : ''} This is about size, not direction.
+            {stock.risk.resultsNext ? ' Quarterly results fall around the next session, which usually doubles the typical move.' : ''}
+            {stock.risk.ivUsed && stock.risk.impliedVolPct != null
+              ? ` The options market is pricing about ${stock.risk.impliedVolPct.toFixed(0)}% volatility a year (roughly ${(stock.risk.impliedVolPct / Math.sqrt(252)).toFixed(1)}% a day), which the expected swing takes into account.`
+              : ''} This is about size, not direction.
           </Text>
         </>
       )}

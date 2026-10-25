@@ -70,17 +70,21 @@ def prepare(frames, results_dates=None):
     return d
 
 
-def fit(train):
-    x = train.dropna(subset=FEATS + ["target_range", "target_absret"])
+def fit(train, feats=None):
+    """feats defaults to FEATS; pass FEATS + extra columns (e.g. implied-vol features, see iv_live.py) for the extended model."""
+    feats = list(feats or FEATS)
+    x = train.dropna(subset=feats + ["target_range", "target_absret"])
     return {
-        "mean": LGBMRegressor(**_PARAMS).fit(x[FEATS], x["target_range"]),
-        "q90": LGBMRegressor(objective="quantile", alpha=0.9, **_PARAMS).fit(x[FEATS], x["target_range"]),
-        "big": LGBMClassifier(**_PARAMS).fit(x[FEATS], (x["target_absret"] >= BIG_MOVE_PCT).astype(int)),
+        "feats": feats,
+        "mean": LGBMRegressor(**_PARAMS).fit(x[feats], x["target_range"]),
+        "q90": LGBMRegressor(objective="quantile", alpha=0.9, **_PARAMS).fit(x[feats], x["target_range"]),
+        "big": LGBMClassifier(**_PARAMS).fit(x[feats], (x["target_absret"] >= BIG_MOVE_PCT).astype(int)),
     }
 
 
 def predict(models, rows):
-    mean = models["mean"].predict(rows[FEATS])
-    q90 = np.maximum(models["q90"].predict(rows[FEATS]), mean)
-    big = models["big"].predict_proba(rows[FEATS])[:, 1]
+    feats = models.get("feats", FEATS)
+    mean = models["mean"].predict(rows[feats])
+    q90 = np.maximum(models["q90"].predict(rows[feats]), mean)
+    big = models["big"].predict_proba(rows[feats])[:, 1]
     return mean, q90, big

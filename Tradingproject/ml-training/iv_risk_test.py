@@ -58,7 +58,8 @@ d = d.merge(iv[["instrument", "tradingDate", "iv30", "iv_d", "iv_rel", "iv_chg"]
 d["vrp"] = d["iv_d"] - d["rv20"]
 RVF = ["rv", "rv5", "rv20", "jump", "neg", "gap2", "early", "late"]
 IVF = ["iv30", "iv_d", "iv_rel", "iv_chg", "vrp"]
-variants = {"base": rf.FEATS, "+RV": rf.FEATS + RVF, "+IV": rf.FEATS + IVF, "+RV+IV": rf.FEATS + RVF + IVF}
+IV4 = ["iv30", "iv_d", "iv_rel", "iv_chg"]            # the production set: needs no minute data
+variants = {"base": rf.FEATS, "+RV": rf.FEATS + RVF, "+IV": rf.FEATS + IVF, "+IV4": rf.FEATS + IV4, "+RV+IV": rf.FEATS + RVF + IVF}
 d = d.dropna(subset=rf.FEATS + ["target_range", "target_absret", "rv20", "iv_d", "iv_rel", "iv_chg"]).reset_index(drop=True)
 print(f"{len(d):,} stock-days with every input; {d.tradingDate.min().date()}..{d.tradingDate.max().date()}", flush=True)
 days = sorted(d["tradingDate"].unique()); test_days = days[-N_TEST:]
