@@ -230,7 +230,7 @@ def options_block(und, master, now_ms, sig, frames):
                 break
             px[t] = float(d.iloc[-1].close)
         if len(px) < 2:
-            break
+            continue                                     # no liquid at-the-money pair at this expiry: try the next one
         T = max((edate(e) - TODAY).days, 1) / 365
         straddle = px["CE"] + px["PE"]
         iv = straddle / (0.7979 * F * math.sqrt(T))

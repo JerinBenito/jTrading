@@ -10,8 +10,13 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -32,6 +37,7 @@ public class CommodityCandleController {
     private static final Set<String> UNITS = Set.of("days", "minutes", "hours");
     private static final long TTL_MILLIS = 5 * 60 * 1000L;
     private static final int MAX_CACHE = 600;
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     private record Cached(long at, List<List<Number>> rows) {
     }
@@ -61,8 +67,19 @@ public class CommodityCandleController {
         if (hit != null && now - hit.at() < TTL_MILLIS) {
             return hit.rows();
         }
+        List<Candle> candles = new ArrayList<>(brokerClient.getCandles(instrumentKey, unit, interval, from, to));
+        if (!to.isBefore(LocalDate.now(IST))) {
+            // the broker's historical endpoint never includes the current day: add it from the intraday endpoint
+            HashSet<Long> have = new HashSet<>();
+            candles.forEach(c -> have.add(c.ts().toEpochSecond()));
+            for (Candle c : todayCandles(instrumentKey, unit, interval)) {
+                if (have.add(c.ts().toEpochSecond())) {
+                    candles.add(c);
+                }
+            }
+        }
         List<List<Number>> rows = new ArrayList<>();
-        for (Candle c : brokerClient.getCandles(instrumentKey, unit, interval, from, to)) {
+        for (Candle c : candles) {
             rows.add(List.of(c.ts().toEpochSecond(), c.open().doubleValue(), c.high().doubleValue(), c.low().doubleValue(),
                     c.close().doubleValue(), c.volume() == null ? 0L : c.volume()));
         }
@@ -71,5 +88,41 @@ public class CommodityCandleController {
         }
         cache.put(cacheKey, new Cached(now, rows));
         return rows;
+    }
+
+    /** Today's candles (empty outside a session). A daily bar, if the broker has no daily intraday unit, is built from 1-minute candles. */
+    private List<Candle> todayCandles(String key, String unit, int interval) {
+        try {
+            List<Candle> c = brokerClient.getIntradayCandles(key, unit, interval);
+            if (!c.isEmpty()) {
+                return c;
+            }
+        } catch (RuntimeException ignored) {
+            // fall through to the minute-built bar for "days"
+        }
+        if (!"days".equals(unit)) {
+            return List.of();
+        }
+        try {
+            List<Candle> minutes = new ArrayList<>(brokerClient.getIntradayCandles(key, "minutes", 1));
+            if (minutes.isEmpty()) {
+                return List.of();
+            }
+            minutes.sort(Comparator.comparing(Candle::ts));
+            BigDecimal high = minutes.get(0).high();
+            BigDecimal low = minutes.get(0).low();
+            long volume = 0;
+            for (Candle m : minutes) {
+                high = high.max(m.high());
+                low = low.min(m.low());
+                volume += m.volume() == null ? 0 : m.volume();
+            }
+            Candle first = minutes.get(0);
+            Candle last = minutes.get(minutes.size() - 1);
+            OffsetDateTime dayStart = first.ts().atZoneSameInstant(IST).toLocalDate().atStartOfDay(IST).toOffsetDateTime();
+            return List.of(new Candle(dayStart, first.open(), high, low, last.close(), volume, last.openInterest()));
+        } catch (RuntimeException e) {
+            return List.of();
+        }
     }
 }
