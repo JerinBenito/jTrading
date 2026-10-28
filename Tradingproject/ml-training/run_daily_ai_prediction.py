@@ -320,8 +320,58 @@ def fetch_results_dates(symbols):
                 else:
                     time.sleep(2)
         time.sleep(0.3)
+    overlay_nse_results(out, symbols)
     print(f"  results calendar: {len(out)} of {len(symbols)} symbols")
     return out
+
+
+NSE_HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+               "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.9", "Referer": "https://www.nseindia.com/"}
+
+
+def overlay_nse_results(out, symbols):
+    """Replaces Yahoo's UPCOMING results dates with NSE's official board-meeting notices (and adds stocks Yahoo has no calendar
+    for). A check on 28 Oct 2026 found 4 of 28 upcoming Yahoo dates off by 2-27 days (Max Health 21, M&M 27) and LT / Tata Consumer
+    missing; past Yahoo dates were 96% exact against NSE and are left alone. Best-effort: NSE blocking this machine (3 failures
+    in a row) just keeps Yahoo's dates. A stock with no notice yet keeps Yahoo's estimate."""
+    import json as _json
+    import urllib.parse as _p
+    import urllib.request as _u
+    today = date.today()
+    lo = today - timedelta(days=3)
+    fails = changed = added = 0
+    for sym in symbols:
+        if sym in ("NIFTY", "BANKNIFTY"):
+            continue
+        if fails >= 3:
+            print("  NSE board-meeting dates unreachable from here - keeping Yahoo's upcoming dates")
+            return
+        try:
+            found = set()
+            for nse_sym in (["TMPV", "TATAMOTORS"] if sym == "TMPV" else [sym]):
+                url = (f"https://www.nseindia.com/api/corporate-board-meetings?index=equities&symbol={_p.quote(nse_sym)}"
+                       f"&from_date={lo:%d-%m-%Y}&to_date={(today + timedelta(days=150)):%d-%m-%Y}")
+                rows = _json.loads(_u.urlopen(_u.Request(url, headers=NSE_HEADERS), timeout=15).read())
+                for r in rows:
+                    text = f"{r.get('bm_purpose', '')} {r.get('bm_desc', '')}".lower()
+                    if "financial result" in text:
+                        found.add(datetime.strptime(r["bm_date"], "%d-%b-%Y").date())
+            fails = 0
+            found = sorted(d for d in found if d >= lo)
+            if not found:
+                continue
+            old = out.get(sym, [])
+            eps = {d: e for d, e in old}
+            kept = [(d, e) for d, e in old if d < lo]
+            out[sym] = sorted(kept + [(d, eps.get(d)) for d in found])
+            if old:
+                changed += 1
+            else:
+                added += 1
+        except Exception:  # noqa: BLE001 - best-effort by design
+            fails += 1
+        time.sleep(0.3)
+    print(f"  NSE official results dates applied: {changed} stocks updated, {added} added")
 
 
 def results_day_offset(day, event_dates):
