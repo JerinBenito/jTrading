@@ -113,7 +113,7 @@ def stock_record(sym, session, feed_close, nifty_chg, results_date):
         "openToClose": rnd((close / open_today - 1) * 100), "rsNifty": rnd(chg - nifty_chg),
         "volRatio": rnd(live.get("volumeSoFarRatio")), "rsi": rnd(rsi_now, 1), "atrPct": rnd(y["atr14"] / y["close"] * 100),
         "r5": rnd((close / d["close"].iloc[-5] - 1) * 100), "r20": rnd((close / d["close"].iloc[-20] - 1) * 100), "trend": trend,
-        "resultsDate": results_date,
+        "resultsDate": results_date, "rangePct": rnd(rng_today),
         "levels": {k: {"price": rnd(v), "distPct": rnd((v / close - 1) * 100)} for k, v in levels.items()},
         "band": {"p5Pct": rnd(p5), "p50Pct": rnd(p50), "p95Pct": rnd(p95),
                  "low": rnd(close * (1 + p5 / 100)) if p5 is not None else None, "high": rnd(close * (1 + p95 / 100)) if p95 is not None else None,
@@ -372,6 +372,28 @@ def build(prev_screens):
     prev = [x for x in prev_screens if x.get("sessionDate") != session]
     scored, tally = score_history(prev, screen)
     screen["scoredPrevious"], screen["tally"] = scored, tally
+    try:                                                   # the app's daily verdict (verdict.py); never allowed to break the screen
+        import verdict as vd
+        from concurrent.futures import ThreadPoolExecutor
+
+        def ai_five_day(sym):
+            try:
+                return sym, get(f"/api/ai-predictions/{p.quote(sym)}?horizon=FORWARD_5D") or []
+            except Exception:
+                return sym, []
+        with ThreadPoolExecutor(6) as ex:
+            ai_rows = dict(ex.map(ai_five_day, [x["symbol"] for x in stocks]))
+        verdict, per_stock = vd.build_verdict(screen, prev, ai_rows)
+        for st in screen["stocks"]:
+            if st["symbol"] in per_stock:
+                st["verdict"] = per_stock[st["symbol"]]
+        screen["verdict"] = verdict
+        v_scored, v_tally = vd.score_verdicts(prev, screen)
+        screen["verdictScored"], screen["verdictTally"] = v_scored, v_tally
+        print(f"  verdict: {verdict['headline']}")
+        print(f"  previous verdict: {v_scored['outcome'] + ' - ' + v_scored['detail'] if v_scored else 'none to score yet'} | tally {v_tally}")
+    except Exception as e:  # noqa: BLE001
+        print(f"  verdict skipped: {e!r}")
     return screen
 
 

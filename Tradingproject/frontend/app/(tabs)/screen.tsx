@@ -10,7 +10,7 @@ import { ScreenHeader } from '../../src/components/ScreenHeader';
 import { Card } from '../../src/components/ui/Card';
 import { Badge } from '../../src/components/ui/Badge';
 import { EmptyState, ErrorState, LoadingState } from '../../src/components/ScreenState';
-import type { DailyScreen, ScreenIndex, ScreenScoredResult, ScreenStock, ScreenStockRisk } from '../../src/api/types';
+import type { DailyScreen, ScreenIndex, ScreenScoredResult, ScreenStock, ScreenStockRisk, VerdictConfidence } from '../../src/api/types';
 
 const signed = (v: number | null | undefined, digits = 2) =>
   v === null || v === undefined ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(digits)}%`;
@@ -65,6 +65,8 @@ export default function ScreenTab() {
             </Text>
           </View>
 
+          <VerdictCard data={data} styles={styles} colors={colors} />
+
           <MarketCard data={data} styles={styles} colors={colors} />
 
           <RiskCard data={data} bySymbol={bySymbol} styles={styles} colors={colors} />
@@ -118,6 +120,65 @@ export default function ScreenTab() {
         </>
       )}
     </ScrollView>
+  );
+}
+
+const CONF: Record<VerdictConfidence, { label: string; color: (c: Theme) => string }> = {
+  tested: { label: 'TESTED', color: (c) => c.up },
+  descriptive: { label: 'DESCRIPTIVE', color: (c) => c.neutral },
+  none: { label: 'NO EDGE', color: (c) => c.down },
+};
+
+function VerdictCard({ data, styles, colors }: { data: DailyScreen; styles: ReturnType<typeof createStyles>; colors: Theme }) {
+  const v = data.verdict;
+  if (!v) return null;
+  const sc = data.verdictScored;
+  const tally = data.verdictTally;
+  const total = tally ? tally.pass + tally.fail : 0;
+  const lean = (xs: { symbol: string; gapPct: number }[]) => xs.map((x) => `${x.symbol} ${x.gapPct >= 0 ? '+' : ''}${x.gapPct.toFixed(2)}`).join(', ');
+  return (
+    <Card title="The app's verdict" subtitle={`For the session on ${v.forSession} — built tonight from the risk model, option prices, results calendar and the AI model`}>
+      <Text style={styles.verdictHeadline}>{v.headline}</Text>
+      {v.lines.map((l, i) => (
+        <View key={i} style={styles.verdictLine}>
+          <Badge label={`${CONF[l.confidence].label} · ${l.tag.toUpperCase()}`} color={CONF[l.confidence].color(colors)} />
+          <Text style={styles.body}>{l.text}</Text>
+        </View>
+      ))}
+      {v.groups.map((g) => (
+        <View key={g.id} style={styles.verdictLine}>
+          <Badge label={`${g.title.toUpperCase()} · ${CONF[g.confidence].label}`} color={CONF[g.confidence].color(colors)} />
+          <Text style={styles.hypMeta}>{g.why}</Text>
+          <View style={styles.chipRow}>
+            {g.names.map((n) => (
+              <Pressable key={n} onPress={() => router.push(`/stock/${n}`)} style={styles.verdictChip}>
+                <Text style={styles.verdictChipText}>{n}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      ))}
+      <View style={styles.verdictLine}>
+        <Badge label="AI MODEL'S 5-DAY LEAN · UNPROVEN" color={colors.ai} />
+        <Text style={styles.hypMeta}>
+          {v.ai.track
+            ? `Track record so far: direction right ${v.ai.track.directionRightPct}% over ${v.ai.track.calls} scored calls; beat its plain baseline ${v.ai.track.beatBaselinePct}% of the time.`
+            : 'Too short a record to judge.'}
+          {v.ai.lowestLean.length > 0 ? ` Leans lowest (points vs its usual): ${lean(v.ai.lowestLean)}. Leans highest: ${lean(v.ai.highestLean)}.` : ''}
+        </Text>
+      </View>
+      {sc && (
+        <View style={styles.verdictLine}>
+          <Badge label={`LAST VERDICT · ${sc.outcome}`} color={sc.outcome === 'PASS' ? colors.up : sc.outcome === 'FAIL' ? colors.down : colors.neutral} />
+          <Text style={styles.hypMeta}>
+            For {sc.forSession}: {sc.detail}.
+            {sc.forecastVsActualRangePct !== null ? ` Its size forecast ran ${sc.forecastVsActualRangePct >= 0 ? '+' : ''}${sc.forecastVsActualRangePct}% versus the swings that happened.` : ''}
+            {total > 0 ? ` Running record: ${tally?.pass} of ${total} verdicts passed.` : ''}
+          </Text>
+        </View>
+      )}
+      <Text style={styles.hypMeta}>{v.disclaimer}</Text>
+    </Card>
   );
 }
 
@@ -313,6 +374,10 @@ function createStyles(colors: Theme) {
     riskHeadText: { color: colors.textMuted, fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
     riskRange: { width: 56, color: colors.textPrimary, fontSize: 12, fontWeight: '700', textAlign: 'right' },
     riskChance: { width: 62, color: colors.textSecondary, fontSize: 12, fontWeight: '600', textAlign: 'right' },
+    verdictHeadline: { color: colors.textPrimary, fontSize: 14, fontWeight: '800', lineHeight: 20, marginTop: 4 },
+    verdictLine: { marginTop: 12, gap: 6 },
+    verdictChip: { backgroundColor: colors.surfaceAlt, borderRadius: 10, paddingHorizontal: 9, paddingVertical: 5, borderWidth: 1, borderColor: colors.border },
+    verdictChipText: { color: colors.textPrimary, fontSize: 11, fontWeight: '700' },
     section: { color: colors.textSecondary, fontSize: 11, fontWeight: '800', letterSpacing: 0.4, marginTop: 16, textTransform: 'uppercase' },
   });
 }

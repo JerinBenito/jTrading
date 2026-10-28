@@ -49,6 +49,20 @@ export function StockDossierCard({ stock, sessionDate }: { stock: ScreenStock; s
         </Text>
       )}
 
+      {stock.verdict && (
+        <View style={{ gap: 4 }}>
+          <Text style={styles.section}>{`Verdict: ${stock.verdict.label}`}</Text>
+          <Text style={styles.body}>{stock.verdict.line}</Text>
+          {stock.verdict.reasons.map((r, i) => (
+            <Text key={i} style={styles.muted}>{`• ${r}`}</Text>
+          ))}
+          {stock.verdict.aiLean && (
+            <Text style={styles.muted}>
+              {`AI model's 5-day lean (unproven): ${stock.verdict.aiLean.fiveDayPct >= 0 ? '+' : ''}${stock.verdict.aiLean.fiveDayPct.toFixed(2)}% against its usual ${stock.verdict.aiLean.usualPct.toFixed(2)}%.`}
+            </Text>
+          )}
+        </View>
+      )}
       {stock.risk && (
         <>
           <Text style={styles.section}>Risk for the next session</Text>
@@ -126,5 +140,6 @@ function createStyles(colors: Theme) {
     levelPrice: { width: 82, color: colors.textPrimary, fontSize: 12, fontWeight: '700', textAlign: 'right' },
     levelDist: { width: 62, fontSize: 12, fontWeight: '700', textAlign: 'right' },
     body: { color: colors.textSecondary, fontSize: 12, lineHeight: 18, marginBottom: 6 },
+    muted: { color: colors.textMuted, fontSize: 11, lineHeight: 16 },
   });
 }

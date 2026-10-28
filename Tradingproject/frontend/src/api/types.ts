@@ -210,6 +210,7 @@ export interface ScreenLevel {
 
 export interface ScreenStock {
   risk?: ScreenStockRisk;
+  verdict?: StockVerdict;
   symbol: string;
   close: number;
   prevClose: number;
@@ -281,6 +282,9 @@ export interface DailyScreen {
   dataNote: string;
   notAvailable: string[];
   disclaimer: string;
+  verdict?: ScreenVerdict;
+  verdictScored?: VerdictScored | null;
+  verdictTally?: { pass: number; fail: number; inconclusive: number };
   market: {
     nifty: ScreenIndex;
     banknifty: ScreenIndex;
@@ -446,4 +450,56 @@ export interface CommodityReport {
   products: CommodityProduct[];
   validation: { quantilesBuilt: string; history: Record<string, string>; q90Coverage: Record<string, Record<string, { peak?: number; dip?: number }>> };
   notes: string[];
+}
+
+/** The app's daily verdict built by ml-training/verdict.py and carried on the daily screen. */
+export type VerdictConfidence = 'tested' | 'descriptive' | 'none';
+
+export interface VerdictLine {
+  text: string;
+  confidence: VerdictConfidence;
+  tag: string;
+}
+
+export interface VerdictGroup {
+  id: string;
+  title: string;
+  why: string;
+  confidence: VerdictConfidence;
+  names: string[];
+}
+
+export interface VerdictLean {
+  symbol: string;
+  gapPct: number;
+}
+
+export interface ScreenVerdict {
+  forSession: string;
+  headline: string;
+  lines: VerdictLine[];
+  groups: VerdictGroup[];
+  ai: {
+    track: { calls: number; directionRightPct: number; beatBaselinePct: number; rankCorrelation: number | null; rankCorrelationT: number | null; days: number } | null;
+    lowestLean: VerdictLean[];
+    highestLean: VerdictLean[];
+    note: string;
+  };
+  disclaimer: string;
+}
+
+export interface VerdictScored {
+  forSession: string;
+  madeOn: string;
+  outcome: 'PASS' | 'FAIL' | 'INCONCLUSIVE';
+  detail: string;
+  ratio: number | null;
+  forecastVsActualRangePct: number | null;
+}
+
+export interface StockVerdict {
+  label: string;
+  line: string;
+  reasons: string[];
+  aiLean: { fiveDayPct: number; usualPct: number; gapPct: number } | null;
 }
