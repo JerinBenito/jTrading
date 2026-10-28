@@ -143,16 +143,19 @@ def build_verdict(screen, prev_screens, ai_rows):
         lines.append({"text": "Overnight context: " + ", ".join(f"{names.get(k, k)} {v:+.1f}%" for k, v in gl.items() if v is not None) +
                       ". Tested: overseas moves add nothing to the size forecast.", "confidence": "descriptive", "tag": "Global"})
     if track:
+        t_ = track.get("rankCorrelationT")
+        sig = "not statistically significant" if t_ is None or abs(t_) < 2 else "statistically detectable but small"
         lines.append({"text": f"Direction: no reliable view. The AI model's own 5-day calls have been right {track['directionRightPct']:.0f}% of the time over {track['calls']} scored calls "
-                               f"(a coin flip is 50%), beating the plain baseline {track['beatBaselinePct']:.0f}% of the time; its stock-ranking correlation with outcomes is "
-                               f"{track['rankCorrelation']} (not statistically significant). Treat any lean below as unproven.", "confidence": "none", "tag": "Direction"})
+                               f"(a coin flip is 50%) and beat the plain baseline {track['beatBaselinePct']:.0f}% of the time; its stock-ranking correlation with outcomes is "
+                               f"{track['rankCorrelation']} ({sig}, over {track['days']} days). Calls made on the same day move together, so these are far fewer independent tests than the "
+                               f"call count suggests. Treat any lean below as unproven.", "confidence": "none", "tag": "Direction"})
     else:
         lines.append({"text": "Direction: no reliable view. No direction signal has survived testing, and the AI model's 5-day calls have too short a record to judge.", "confidence": "none", "tag": "Direction"})
 
     ev_names = {"fomc": "Fed-decision morning", "monthend": "month-end", "expiry": "expiry day", "rbi": "RBI decision day"}
     ev_txt = " and ".join(ev_names.get(e["id"], e["id"]) for e in events)
     kind = "wider than usual" if wide else (f"a normal day or a little wider ({ev_txt})" if events else "close to a normal day")
-    headline = (f"Tomorrow looks {kind} for swings ({exp_b:.1f}% vs {typ_b:.1f}% usual); {n_event} results reaction(s), {len(groups['high'])} high-swing and "
+    headline = (f"Tomorrow should be {kind} for swings ({exp_b:.1f}% vs {typ_b:.1f}% usual); {n_event} results reaction(s), {len(groups['high'])} high-swing and "
                 f"{len(groups['calm'])} calm names. No reliable call on direction.")
     gdef = [("event", "Results reaction", "Expect the biggest moves: results days have moved stocks about twice as much as normal.", "tested"),
             ("high", "High swing", "The model expects a larger-than-usual swing here.", "tested"),
