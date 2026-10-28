@@ -107,6 +107,9 @@ public class UpstoxBrokerClient implements BrokerClient {
     }
 
     private OptionChainEntry.OptionLeg toLeg(UpstoxOptionChainResponse.Leg leg) {
+        if (leg == null || leg.marketData() == null) {
+            return new OptionChainEntry.OptionLeg(null, null, null, null, null);      // deep out-of-the-money strikes can come back empty
+        }
         var market = leg.marketData();
         long changeOi = Objects.requireNonNullElse(market.oi(), 0L)
                 - Objects.requireNonNullElse(market.prevOi(), 0L);

@@ -169,6 +169,32 @@ public class QuartzConfig {
     }
 
     @Bean
+    public JobDetail stockOptionSummaryJobDetail(com.jerin.trading.options.StockOptionSummaryService stockOptionSummaryService) {
+        JobDataMap jobDataMap = new JobDataMap();
+        jobDataMap.put("stockOptionSummaryService", stockOptionSummaryService);
+        return JobBuilder.newJob(StockOptionSummaryJob.class)
+                .withIdentity("stockOptionSummaryJob")
+                .usingJobData(jobDataMap)
+                .storeDurably()
+                .build();
+    }
+
+    /**
+     * Records every basket stock's option-chain summary at :20 past each hour from 09:20 to 15:20 IST - away from the :00
+     * ingestion cycle. The broker only serves the current chain, so this history exists only from the day it started.
+     */
+    @Bean
+    public Trigger stockOptionSummaryTrigger(JobDetail stockOptionSummaryJobDetail) {
+        return TriggerBuilder.newTrigger()
+                .forJob(stockOptionSummaryJobDetail)
+                .withIdentity("stockOptionSummaryTrigger")
+                .withSchedule(CronScheduleBuilder
+                        .cronSchedule("0 20 9-15 ? * MON-FRI")
+                        .inTimeZone(TimeZone.getTimeZone("Asia/Kolkata")))
+                .build();
+    }
+
+    @Bean
     public JobDetail commodityReportDispatchJobDetail(GithubActionsDispatchService githubActionsDispatchService) {
         JobDataMap jobDataMap = new JobDataMap();
         jobDataMap.put("githubActionsDispatchService", githubActionsDispatchService);
