@@ -266,7 +266,14 @@ public class AiPredictionService {
         if (horizonDays == null) {
             return null;
         }
-        List<OhlcvCandle> hourly = candleRepository.findByInstrumentAndIntervalOrderByTsAsc(prediction.getInstrument(), SOURCE_INTERVAL);
+        // Only the target day and the N trading days after it matter, so load just that window. Loading the instrument's whole
+        // hourly history here (once per unresolved prediction, all inside evaluatePending's single transaction) held every
+        // stock's full history in memory at once and ran the 400 MB heap out after the history was extended back to 2022
+        // (hourly out-of-memory restarts from 2026-10-26). N trading days always fit in 2N + 10 calendar days.
+        OffsetDateTime from = prediction.getTargetDate().atStartOfDay(IST).toOffsetDateTime();
+        OffsetDateTime to = prediction.getTargetDate().plusDays(2L * horizonDays + 10).atStartOfDay(IST).toOffsetDateTime();
+        List<OhlcvCandle> hourly = candleRepository.findByInstrumentAndIntervalAndTsBetweenOrderByTsAsc(
+                prediction.getInstrument(), SOURCE_INTERVAL, from, to);
         List<OhlcvCandle> daily = DailyBarAggregator.aggregate(hourly);
 
         int targetIndex = -1;
