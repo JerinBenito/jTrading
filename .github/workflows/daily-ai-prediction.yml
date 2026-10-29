@@ -48,6 +48,7 @@ jobs:
 
       - name: Restore today's trained models
         id: bundle
+        continue-on-error: true          # a cache outage must never cost a day's predictions - the script just trains as before
         uses: actions/cache/restore@v4
         with:
           path: Tradingproject/ml-training/bundle
@@ -57,6 +58,7 @@ jobs:
 
       - name: Save today's trained models for the next runs
         if: always() && steps.bundle.outputs.cache-hit != 'true' && hashFiles('Tradingproject/ml-training/bundle/**') != ''
+        continue-on-error: true
         uses: actions/cache/save@v4
         with:
           path: Tradingproject/ml-training/bundle
