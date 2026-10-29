@@ -211,9 +211,16 @@ def get_json(path, timeout=60, attempts=3):
     raise last_error
 
 
+DRY_RUN = bool(os.environ.get("DRY_RUN"))
+DRY_SENT = []          # DRY_RUN=1: every POST is recorded here (and written to DRY_OUT at the end) instead of being sent
+
+
 def post_json(path, payload, timeout=300):
     # /api/ml/features/backfill-all alone measured ~2m11s for all 52 instruments;
     # 30s was too short and caused a real TimeoutError in production (2026-09-07).
+    if DRY_RUN:
+        DRY_SENT.append({"path": path, "payload": payload})
+        return {}
     data = json.dumps(payload).encode()
     req = urllib.request.Request(f"{API_BASE}{path}", data=data,
                                   headers={"Content-Type": "application/json"}, method="POST")
@@ -497,6 +504,40 @@ def corporate_action_days_intraday(df):
     for inst, grp in m[m["gap"].abs() > CORP_ACTION_GAP_PCT].groupby("instrument"):
         out[inst] = list(grp["tradingDate"])
     return out
+
+
+BUNDLE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bundle")
+BUNDLE_PATH = os.path.join(BUNDLE_DIR, "intraday_bundle.joblib")
+BUNDLE_FORMAT = 1
+
+
+def ist_today():
+    return (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).date().isoformat()
+
+
+def save_bundle(models, latest_day_end_rank, conformal, swing, results):
+    """Everything the intraday predictions need besides the live rows, saved once a day. The training data (completed days only -
+    the export never includes a day still in progress) is identical for every run in a day, so retraining each hour repeated the
+    same fit and re-downloaded the whole ~180 MB history from the 1 GB server every time."""
+    os.makedirs(BUNDLE_DIR, exist_ok=True)
+    joblib.dump({"format": BUNDLE_FORMAT, "trainedOn": ist_today(), "modelVersion": MODEL_VERSION, "models": models,
+                 "latestDayEndRank": latest_day_end_rank, "conformal": conformal, "swing": swing, "results": results}, BUNDLE_PATH)
+    print(f"  saved today's trained bundle -> {BUNDLE_PATH} ({os.path.getsize(BUNDLE_PATH) / 1e6:.1f} MB)")
+
+
+def load_bundle():
+    """Today's bundle if one exists (restored from the workflow cache, or left by an earlier run); otherwise None and the caller
+    trains as before. Never raises: a missing, stale or unreadable bundle just means a normal full run."""
+    if os.environ.get("FORCE_RETRAIN") or not os.path.exists(BUNDLE_PATH):
+        return None
+    try:
+        b = joblib.load(BUNDLE_PATH)
+        if b.get("format") == BUNDLE_FORMAT and b.get("trainedOn") == ist_today():
+            return b
+        print(f"  found a bundle from {b.get('trainedOn')} - not today's, retraining")
+    except Exception as e:  # noqa: BLE001
+        print(f"  could not read the saved bundle ({e!r}) - retraining")
+    return None
 
 
 def train_intraday_model(results=None):
@@ -832,13 +873,32 @@ if __name__ == "__main__":
     # snapshot that includes more of today's actual price action than the last run had -
     # genuinely re-predicting from newer information, not just re-anchoring the point estimate
     # to the current price the way the deterministic model does.
-    print("Fetching the quarterly-results calendar...")
-    results_calendar = fetch_results_dates(symbols)
-    push_results_calendar(results_calendar)
-    intraday_models, latest_day_end_rank, conformal, swing = train_intraday_model(results_calendar)
+    t_start = time.time()
+    bundle = load_bundle()
+    if bundle is not None:
+        # Train once a day, predict every run: the models, conformal widths, swing models and results calendar are today's.
+        print(f"Reusing today's trained models (trained by {bundle['modelVersion']}) - skipping the history download and the fit.")
+        MODEL_VERSION = bundle["modelVersion"]            # predictions stay traceable to the run that trained them
+        results_calendar = bundle["results"]
+        intraday_models, latest_day_end_rank, conformal, swing = bundle["models"], bundle["latestDayEndRank"], bundle["conformal"], bundle["swing"]
+    else:
+        print("Fetching the quarterly-results calendar...")
+        results_calendar = fetch_results_dates(symbols)
+        push_results_calendar(results_calendar)
+        intraday_models, latest_day_end_rank, conformal, swing = train_intraday_model(results_calendar)
+        save_bundle(intraday_models, latest_day_end_rank, conformal, swing, results_calendar)
     run_intraday_predictions(intraday_models, symbols, latest_day_end_rank, results_calendar, conformal, swing)
+    print(f"  intraday part took {time.time() - t_start:.0f}s ({'reused' if bundle is not None else 'trained'})")
 
     # Multi-day: only needs one real run per day - its features/target don't change intraday.
+    if DRY_RUN:
+        print("\nDRY_RUN: multi-day step skipped; nothing was sent to the backend.")
+        out = os.environ.get("DRY_OUT")
+        if out:
+            with open(out, "w", encoding="utf-8") as f:
+                json.dump(DRY_SENT, f)
+            print(f"  wrote {len(DRY_SENT)} would-be POSTs to {out}")
+        raise SystemExit(0)
     if already_ran_multiday_today():
         print("\nMulti-day models already ran today - skipping (today's intraday refresh above still happened).")
     else:

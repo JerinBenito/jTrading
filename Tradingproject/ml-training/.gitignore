@@ -10,3 +10,6 @@ models/
 # Local virtual environment - recreate with: python -m venv venv && venv/Scripts/pip install -r requirements.txt
 venv/
 __pycache__/
+
+# Daily trained-model bundle (run_daily_ai_prediction.py): restored from the workflow cache on GitHub, regenerable.
+bundle/

@@ -33,10 +33,34 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: Tradingproject/ml-training/requirements.txt
 
       - run: pip install -r requirements.txt
 
+      # Train once a day, predict every run: the first run of the (IST) day trains the models and saves a ~4 MB bundle; every later
+      # run restores it and only fetches live rows and predicts (~20 s instead of ~4 min, and it no longer re-downloads the whole
+      # ~180 MB history from the 1 GB server each hour). A missing or stale bundle just means a normal full run, so this can only
+      # save time. Set FORCE_RETRAIN=1 to ignore it.
+      - name: Today's date (IST)
+        id: day
+        run: echo "d=$(TZ=Asia/Kolkata date +%F)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore today's trained models
+        id: bundle
+        uses: actions/cache/restore@v4
+        with:
+          path: Tradingproject/ml-training/bundle
+          key: ai-bundle-${{ steps.day.outputs.d }}
+
       - run: python run_daily_ai_prediction.py
+
+      - name: Save today's trained models for the next runs
+        if: always() && steps.bundle.outputs.cache-hit != 'true' && hashFiles('Tradingproject/ml-training/bundle/**') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: Tradingproject/ml-training/bundle
+          key: ai-bundle-${{ steps.day.outputs.d }}
 
       - uses: actions/upload-artifact@v4
         # Only the first successful firing each day actually trains/saves models (redundant
